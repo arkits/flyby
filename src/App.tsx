@@ -510,13 +510,33 @@ export default function App() {
         position: 'absolute',
         bottom: 20,
         left: 20,
-        color: 'rgba(255,255,255,0.3)',
-        fontFamily: 'monospace',
+        color: 'rgba(51, 255, 51, 0.5)',
+        fontFamily: "'IBM Plex Mono', monospace",
         fontSize: '12px',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
         userSelect: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        zIndex: 1000,
       }}>
-        FLYBY2
+        <div style={{ fontWeight: 600, letterSpacing: '1px', textShadow: '0 0 5px rgba(51, 255, 51, 0.3)' }}>FLYBY2</div>
+        <a 
+          href="https://github.com/arkits/flyby" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          style={{
+            color: 'rgba(51, 255, 51, 0.3)',
+            textDecoration: 'none',
+            fontSize: '10px',
+            transition: 'color 0.2s',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'rgba(51, 255, 51, 0.8)'}
+          onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(51, 255, 51, 0.3)'}
+        >
+          [ GITHUB_REPO ]
+        </a>
       </div>
     </div>
   );

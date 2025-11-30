@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 FLYBY2-master
+
+.vercel
