@@ -2,14 +2,13 @@ import { useFrame } from '@react-three/fiber'
 import { useRef, useState, useMemo, useEffect } from 'react'
 import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
+import type { FlightPathResult } from '../flightPaths'
 
 interface JetProps {
-  flightPath: (t: number) => { 
-    position: THREE.Vector3
-    direction: THREE.Vector3
-    bank?: number 
-  }
-  sceneIdx: number
+  flightPath: (t: number, startHeading: number, startPos: THREE.Vector3) => FlightPathResult
+  startHeading: number
+  startPosition: THREE.Vector3
+  sceneKey: number
 }
 
 // Trail point with position and right vector for consistent offset
@@ -19,6 +18,7 @@ interface TrailPoint {
 }
 
 // Single flat ribbon trail using stored right vectors
+// Matches original FLYBY2's RIBBONSMOKE style
 const FlatRibbon = ({ 
   points, 
   width, 
@@ -41,8 +41,8 @@ const FlatRibbon = ({
     for (let i = 0; i < points.length; i++) {
       const { pos, right } = points[i]
       
-      // Fade out ribbon towards end
-      const fade = 1 - (i / points.length) * 0.4
+      // Fade out ribbon towards end (like original smoke trail decay)
+      const fade = 1 - (i / points.length) * 0.5
       const w = width * fade
       
       // Apply offset using the stored right vector
@@ -87,7 +87,8 @@ const FlatRibbon = ({
   )
 }
 
-// Triple contrail - 3 flat ribbons, middle one thick
+// Triple contrail - matches original FLYBY2's ribbon smoke effect
+// Original had smoke trails that expanded and faded over time
 const TripleContrail = ({ points }: { points: TrailPoint[] }) => {
   if (points.length < 3) return null
   
@@ -96,40 +97,41 @@ const TripleContrail = ({ points }: { points: TrailPoint[] }) => {
       {/* Left thin ribbon */}
       <FlatRibbon 
         points={points} 
-        width={0.12} 
-        offset={-1.5}
+        width={0.15} 
+        offset={-1.8}
         color="#ffffff"
-        opacity={0.9}
+        opacity={0.85}
       />
       
       {/* Center thick ribbon */}
       <FlatRibbon 
         points={points} 
-        width={0.5} 
+        width={0.6} 
         offset={0}
         color="#ffffff"
-        opacity={0.95}
+        opacity={0.9}
       />
       
       {/* Right thin ribbon */}
       <FlatRibbon 
         points={points} 
-        width={0.12} 
-        offset={1.5}
+        width={0.15} 
+        offset={1.8}
         color="#ffffff"
-        opacity={0.9}
+        opacity={0.85}
       />
     </group>
   )
 }
 
-const Jet = ({ flightPath, sceneIdx }: JetProps) => {
+const Jet = ({ flightPath, startHeading, startPosition, sceneKey }: JetProps) => {
   const ref = useRef<THREE.Group>(null!)
   const exhaustRef = useRef<THREE.Object3D>(null!)
   const [trailPoints, setTrailPoints] = useState<TrailPoint[]>([])
-  const maxTrailPoints = 200
+  const maxTrailPoints = 250 // Longer trail like original
   const exhaustWorldPos = useRef(new THREE.Vector3())
   const frameSkip = useRef(0)
+  const startTime = useRef(0)
   
   // For smooth rotation
   const currentQuaternion = useRef(new THREE.Quaternion())
@@ -141,16 +143,22 @@ const Jet = ({ flightPath, sceneIdx }: JetProps) => {
   // Clone the scene so we can modify it
   const clonedScene = useMemo(() => scene.clone(), [scene])
 
-  // Clear contrail when scene changes
+  // Clear contrail and reset time when scene changes
   useEffect(() => {
     setTrailPoints([])
     currentQuaternion.current.identity()
     targetQuaternion.current.identity()
-  }, [sceneIdx])
+    startTime.current = 0
+  }, [sceneKey])
 
   useFrame((state) => {
-    const t = state.clock.getElapsedTime()
-    const { position, direction, bank = 0 } = flightPath(t)
+    // Track elapsed time since scene start
+    if (startTime.current === 0) {
+      startTime.current = state.clock.getElapsedTime()
+    }
+    const t = state.clock.getElapsedTime() - startTime.current
+    
+    const { position, direction, bank = 0 } = flightPath(t, startHeading, startPosition)
     
     // Set position
     ref.current.position.copy(position)
@@ -169,8 +177,8 @@ const Jet = ({ flightPath, sceneIdx }: JetProps) => {
     bankQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank)
     targetQuaternion.current.multiply(bankQuaternion)
     
-    // Smooth interpolation
-    currentQuaternion.current.slerp(targetQuaternion.current, 0.12)
+    // Smooth interpolation for realistic movement
+    currentQuaternion.current.slerp(targetQuaternion.current, 0.15)
     ref.current.quaternion.copy(currentQuaternion.current)
     
     // Get world position and right vector for contrail

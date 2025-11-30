@@ -1,16 +1,17 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { PerspectiveCamera } from '@react-three/drei'
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 
 interface CameraProps {
-  sceneIdx: number
+  cameraPosition: THREE.Vector3
+  sceneKey: number
 }
 
 // Minimum camera height above ground
 const MIN_CAMERA_HEIGHT = 1.5
 
-const Camera = ({ sceneIdx }: CameraProps) => {
+const Camera = ({ cameraPosition, sceneKey }: CameraProps) => {
   const { scene } = useThree()
   const cameraRef = useRef<THREE.PerspectiveCamera>(null!)
   const currentLookAt = useRef(new THREE.Vector3())
@@ -18,31 +19,21 @@ const Camera = ({ sceneIdx }: CameraProps) => {
   const lastJetPos = useRef(new THREE.Vector3())
   const frameCount = useRef(0)
 
-  // Ground-based camera positions - one per flight path, closer to action
-  const cameraPositions = useMemo(() => [
-    new THREE.Vector3(0, 3, 45),        // Flyby - front view
-    new THREE.Vector3(-25, 4, 35),      // Loop - side angle to see vertical
-    new THREE.Vector3(40, 3, 30),       // Barrel Roll - side view
-    new THREE.Vector3(-30, 5, 40),      // Immelmann - good angle for half loop
-    new THREE.Vector3(15, 4, 35),       // Cuban Eight - centered view
-    new THREE.Vector3(30, 3, 40),       // Aileron Roll - side view
-  ], [])
-
-  // When scene changes, instantly reset camera position and look-at
+  // When scene changes, set camera to the random position
   useEffect(() => {
     if (!cameraRef.current) return
     
-    const newPos = cameraPositions[sceneIdx % cameraPositions.length].clone()
+    const newPos = cameraPosition.clone()
     // Ensure camera never goes below ground
     newPos.y = Math.max(newPos.y, MIN_CAMERA_HEIGHT)
     cameraRef.current.position.copy(newPos)
     
     // Reset tracking state
-    currentLookAt.current.set(0, 15, 0)
-    lastJetPos.current.set(0, 15, 0)
+    currentLookAt.current.set(0, 25, 0)
+    lastJetPos.current.set(0, 25, 0)
     jetVelocity.current.set(0, 0, 0)
     frameCount.current = 0
-  }, [sceneIdx, cameraPositions])
+  }, [sceneKey, cameraPosition])
 
   useFrame(() => {
     const jet = scene.getObjectByName('jet')
@@ -68,16 +59,16 @@ const Camera = ({ sceneIdx }: CameraProps) => {
     lastJetPos.current.copy(jet.position)
 
     // Look ahead of the jet slightly based on its velocity
-    const lookAheadFactor = 8
+    const lookAheadFactor = 6
     const targetLookAt = jet.position.clone().add(
       jetVelocity.current.clone().multiplyScalar(lookAheadFactor)
     )
     
-    // Smooth look-at transition
-    currentLookAt.current.lerp(targetLookAt, 0.08)
+    // Smooth look-at transition (like original's camera tracking)
+    currentLookAt.current.lerp(targetLookAt, 0.1)
     cameraRef.current.lookAt(currentLookAt.current)
 
-    // Keep the camera upright (no roll)
+    // Keep the camera upright (no roll) - like original
     const euler = new THREE.Euler().setFromQuaternion(cameraRef.current.quaternion)
     euler.z = 0
     cameraRef.current.quaternion.setFromEuler(euler)
@@ -87,10 +78,10 @@ const Camera = ({ sceneIdx }: CameraProps) => {
     <PerspectiveCamera 
       ref={cameraRef} 
       makeDefault 
-      fov={45}
+      fov={50} // Slightly wider FOV like original
       near={0.1}
-      far={600}
-      position={cameraPositions[0]}
+      far={800}
+      position={cameraPosition}
     />
   )
 }
