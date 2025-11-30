@@ -4,6 +4,7 @@ import * as THREE from 'three';
 interface SceneProps {
   showSky?: boolean;
   showGround?: boolean;
+  buildingDensity?: number;
 }
 
 /**
@@ -15,20 +16,20 @@ export function GroundGrid() {
     const positions: number[] = [];
     const step = 1000;
     const extent = 20000;
-    
+
     // Create grid lines
     for (let x = -extent; x <= extent; x += step) {
       // Lines along Z axis
       positions.push(x, 0, -extent);
       positions.push(x, 0, extent);
     }
-    
+
     for (let z = -extent; z <= extent; z += step) {
       // Lines along X axis
       positions.push(-extent, 0, z);
       positions.push(extent, 0, z);
     }
-    
+
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     return geometry;
@@ -48,8 +49,8 @@ export function Ground() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
       <planeGeometry args={[50000, 50000]} />
-      <meshStandardMaterial 
-        color="#1a3d1a" 
+      <meshStandardMaterial
+        color="#1a3d1a"
         roughness={1}
         metalness={0}
       />
@@ -120,10 +121,10 @@ export function SceneLighting() {
         shadow-camera-top={500}
         shadow-camera-bottom={-500}
       />
-      
+
       {/* Ambient light for fill */}
       <ambientLight intensity={0.4} />
-      
+
       {/* Hemisphere light for sky/ground color */}
       <hemisphereLight
         color="#87ceeb"
@@ -137,22 +138,22 @@ export function SceneLighting() {
 /**
  * Basic building component
  */
-function Building({ 
-  position, 
-  size, 
-  color = '#555566' 
-}: { 
-  position: [number, number, number]; 
+function Building({
+  position,
+  size,
+  color = '#555566'
+}: {
+  position: [number, number, number];
   size: [number, number, number];
   color?: string;
 }) {
   // Position y is at half height (Three.js boxes are centered)
   const adjustedPosition: [number, number, number] = [
-    position[0], 
-    position[1] + size[1] / 2, 
+    position[0],
+    position[1] + size[1] / 2,
     position[2]
   ];
-  
+
   return (
     <mesh position={adjustedPosition} castShadow receiveShadow>
       <boxGeometry args={size} />
@@ -164,12 +165,12 @@ function Building({
 /**
  * Single runway with markings
  */
-function RunwayStrip({ 
-  position = [0, 0, 0], 
+function RunwayStrip({
+  position = [0, 0, 0],
   rotation = 0,
   length = 600,
-  width = 50 
-}: { 
+  width = 50
+}: {
   position?: [number, number, number];
   rotation?: number;
   length?: number;
@@ -182,27 +183,27 @@ function RunwayStrip({
         <planeGeometry args={[width, length]} />
         <meshStandardMaterial color="#2a2a2a" roughness={0.9} metalness={0} />
       </mesh>
-      
+
       {/* Center line markings */}
       {Array.from({ length: Math.floor(length / 40) }).map((_, i) => (
-        <mesh 
+        <mesh
           key={`center-${i}`}
-          rotation={[-Math.PI / 2, 0, 0]} 
-          position={[0, 0.15, -length/2 + 30 + i * 40]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.15, -length / 2 + 30 + i * 40]}
         >
           <planeGeometry args={[2, 20]} />
           <meshStandardMaterial color="#ffffff" roughness={0.9} />
         </mesh>
       ))}
-      
+
       {/* Threshold markings at both ends */}
       {[-1, 1].map((end) => (
         [-1, 1].map((side) => (
           Array.from({ length: 6 }).map((_, i) => (
-            <mesh 
+            <mesh
               key={`threshold-${end}-${side}-${i}`}
-              rotation={[-Math.PI / 2, 0, 0]} 
-              position={[side * (6 + i * 4), 0.15, end * (length/2 - 20)]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[side * (6 + i * 4), 0.15, end * (length / 2 - 20)]}
             >
               <planeGeometry args={[2.5, 25]} />
               <meshStandardMaterial color="#ffffff" roughness={0.9} />
@@ -210,12 +211,12 @@ function RunwayStrip({
           ))
         ))
       ))}
-      
+
       {/* Edge lines */}
-      {[-width/2 + 2, width/2 - 2].map((x) => (
-        <mesh 
+      {[-width / 2 + 2, width / 2 - 2].map((x) => (
+        <mesh
           key={`edge-${x}`}
-          rotation={[-Math.PI / 2, 0, 0]} 
+          rotation={[-Math.PI / 2, 0, 0]}
           position={[x, 0.15, 0]}
         >
           <planeGeometry args={[1.5, length - 10]} />
@@ -234,13 +235,13 @@ export function Runway() {
     <group>
       {/* Main runway - North-South */}
       <RunwayStrip position={[0, 0, 0]} rotation={0} length={700} width={55} />
-      
+
       {/* Cross runway - East-West */}
       <RunwayStrip position={[0, 0, 0]} rotation={Math.PI / 2} length={500} width={45} />
-      
+
       {/* Diagonal runway */}
       <RunwayStrip position={[-200, 0, -200]} rotation={Math.PI / 4} length={400} width={40} />
-      
+
       {/* Taxiways connecting runways */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[80, 0.08, 100]}>
         <planeGeometry args={[20, 150]} />
@@ -265,64 +266,112 @@ interface BuildingDef {
 /**
  * Airport buildings spread around center
  */
-export function AirportBuildings() {
-  const buildings = useMemo<BuildingDef[]>(() => [
-    // === MAIN TERMINAL AREA (East side) ===
-    // Main terminal building
-    { position: [150, 0, 0], size: [100, 35, 200], color: '#556677' },
-    // Terminal extension
-    { position: [180, 0, -150], size: [60, 25, 80], color: '#556677' },
-    { position: [180, 0, 150], size: [60, 25, 80], color: '#556677' },
-    
-    // === CONTROL TOWER (Central-East) ===
-    { position: [100, 0, -80], size: [20, 80, 20], color: '#667788' },
-    { position: [100, 80, -80], size: [28, 15, 28], color: '#88aacc' }, // Glass top
-    
-    // === HANGARS (West side) ===
-    { position: [-150, 0, -120], size: [90, 50, 70], color: '#445566' },
-    { position: [-150, 0, 0], size: [90, 50, 70], color: '#445566' },
-    { position: [-150, 0, 120], size: [90, 50, 70], color: '#445566' },
-    
-    // === CARGO AREA (South) ===
-    { position: [50, 0, 250], size: [120, 30, 60], color: '#505560' },
-    { position: [-50, 0, 280], size: [80, 25, 50], color: '#505560' },
-    { position: [80, 0, 320], size: [60, 20, 40], color: '#505560' },
-    
-    // === FUEL DEPOT (North-West) ===
-    { position: [-200, 0, -200], size: [40, 15, 40], color: '#666655' },
-    { position: [-250, 0, -180], size: [30, 12, 30], color: '#666655' },
-    { position: [-220, 0, -250], size: [35, 18, 35], color: '#666655' },
-    
-    // === MAINTENANCE (North) ===
-    { position: [0, 0, -280], size: [100, 40, 60], color: '#556066' },
-    { position: [-80, 0, -250], size: [50, 30, 50], color: '#556066' },
-    { position: [100, 0, -260], size: [60, 35, 45], color: '#556066' },
-    
-    // === SMALL UTILITY BUILDINGS scattered ===
-    { position: [220, 0, 80], size: [25, 15, 25], color: '#556666' },
-    { position: [240, 0, -40], size: [20, 12, 20], color: '#556666' },
-    { position: [-220, 0, 60], size: [30, 18, 30], color: '#556666' },
-    { position: [-200, 0, 180], size: [25, 14, 25], color: '#556666' },
-    { position: [60, 0, -180], size: [22, 16, 22], color: '#556666' },
-    
-    // === DISTANT CITY BUILDINGS (for skyline) ===
-    { position: [400, 0, 0], size: [50, 100, 50], color: '#445566' },
-    { position: [450, 0, 80], size: [40, 70, 40], color: '#445566' },
-    { position: [380, 0, -100], size: [45, 85, 45], color: '#445566' },
-    { position: [500, 0, -50], size: [35, 60, 35], color: '#445566' },
-    
-    { position: [-400, 0, 50], size: [50, 90, 50], color: '#445566' },
-    { position: [-450, 0, -60], size: [40, 75, 40], color: '#445566' },
-    { position: [-380, 0, 120], size: [45, 65, 45], color: '#445566' },
-    
-    { position: [100, 0, 450], size: [55, 80, 55], color: '#445566' },
-    { position: [-50, 0, 480], size: [40, 95, 40], color: '#445566' },
-    { position: [200, 0, 420], size: [35, 55, 35], color: '#445566' },
-    
-    { position: [50, 0, -450], size: [50, 110, 50], color: '#445566' },
-    { position: [-100, 0, -420], size: [45, 70, 45], color: '#445566' },
-    { position: [180, 0, -480], size: [40, 85, 40], color: '#445566' },
-  ], []);
+export function AirportBuildings({ density = 4000 }: { density?: number }) {
+  const buildings = useMemo<BuildingDef[]>(() => {
+    // Scale factor for existing buildings
+    const scale = 0.5;
+
+    // Move static buildings away from runways
+    const originalBuildings: BuildingDef[] = [
+      // === MAIN TERMINAL AREA (East side) - Moved further East ===
+      // Main terminal building
+      { position: [400, 0, 0], size: [100, 35, 200], color: '#556677' },
+      // Terminal extension
+      { position: [430, 0, -150], size: [60, 25, 80], color: '#556677' },
+      { position: [430, 0, 150], size: [60, 25, 80], color: '#556677' },
+
+      // === CONTROL TOWER (Central-East) - Moved East ===
+      { position: [300, 0, -80], size: [20, 80, 20], color: '#667788' },
+      { position: [300, 80, -80], size: [28, 15, 28], color: '#88aacc' }, // Glass top
+
+      // === HANGARS (West side) - Moved further West ===
+      { position: [-450, 0, -120], size: [90, 50, 70], color: '#445566' },
+      { position: [-450, 0, 0], size: [90, 50, 70], color: '#445566' },
+      { position: [-450, 0, 120], size: [90, 50, 70], color: '#445566' },
+
+      // === CARGO AREA (South) - Moved South ===
+      { position: [50, 0, 550], size: [120, 30, 60], color: '#505560' },
+      { position: [-50, 0, 580], size: [80, 25, 50], color: '#505560' },
+      { position: [80, 0, 620], size: [60, 20, 40], color: '#505560' },
+
+      // === FUEL DEPOT (North-West) - Moved further out ===
+      { position: [-500, 0, -500], size: [40, 15, 40], color: '#666655' },
+      { position: [-550, 0, -480], size: [30, 12, 30], color: '#666655' },
+      { position: [-520, 0, -550], size: [35, 18, 35], color: '#666655' },
+
+      // === MAINTENANCE (North) - Moved North ===
+      { position: [0, 0, -580], size: [100, 40, 60], color: '#556066' },
+      { position: [-80, 0, -550], size: [50, 30, 50], color: '#556066' },
+      { position: [100, 0, -560], size: [60, 35, 45], color: '#556066' },
+    ];
+
+    // Scale existing buildings
+    const scaledExisting = originalBuildings.map(b => ({
+      ...b,
+      size: [b.size[0] * scale, b.size[1] * scale, b.size[2] * scale] as Vec3
+    }));
+
+    // Generate new scattered buildings
+    const generated: BuildingDef[] = [];
+    const count = density;
+    const spread = 15000;
+
+    // Helper to check collision with runways
+    const isCollidingWithRunway = (x: number, z: number, w: number, d: number) => {
+      const buffer = 50; // Extra space around runways
+
+      // 1. Main Runway (N-S): x=0, z=[-350, 350], width=55
+      // Bounds: x: [-27.5, 27.5], z: [-350, 350]
+      if (
+        x + w / 2 > -28 - buffer && x - w / 2 < 28 + buffer &&
+        z + d / 2 > -350 - buffer && z - d / 2 < 350 + buffer
+      ) return true;
+
+      // 2. Cross Runway (E-W): z=0, x=[-250, 250], width=45
+      // Bounds: x: [-250, 250], z: [-22.5, 22.5]
+      if (
+        x + w / 2 > -250 - buffer && x - w / 2 < 250 + buffer &&
+        z + d / 2 > -23 - buffer && z - d / 2 < 23 + buffer
+      ) return true;
+
+      // 3. Diagonal Runway: center=[-200, -200], length=400, width=40, angle=45deg
+      // Simple bounding box for diagonal area: x: [-400, 0], z: [-400, 0]
+      // More precise check could be done, but a box is safer for now
+      if (
+        x + w / 2 > -450 && x - w / 2 < 50 &&
+        z + d / 2 > -450 && z - d / 2 < 50
+      ) {
+        // Exclude the diagonal strip specifically? 
+        // For simplicity, just exclude this quadrant near the center
+        return true;
+      }
+
+      return false;
+    };
+
+    for (let i = 0; i < count; i++) {
+      const x = (Math.random() - 0.5) * spread * 2;
+      const z = (Math.random() - 0.5) * spread * 2;
+
+      const width = 10 + Math.random() * 30;
+      const depth = 10 + Math.random() * 30;
+      const height = 10 + Math.random() * 80;
+
+      if (isCollidingWithRunway(x, z, width, depth)) continue;
+
+      // Random grey color
+      const shade = 60 + Math.floor(Math.random() * 60);
+      const hex = '#' + shade.toString(16).padStart(2, '0').repeat(3);
+
+      generated.push({
+        position: [x, 0, z],
+        size: [width, height, depth],
+        color: hex
+      });
+    }
+
+    return [...scaledExisting, ...generated];
+  }, [density]);
 
   return (
     <group>
@@ -336,7 +385,7 @@ export function AirportBuildings() {
 /**
  * Complete scene environment with toggleable elements
  */
-export function SceneEnvironment({ showSky = true, showGround = true }: SceneProps) {
+export function SceneEnvironment({ showSky = true, showGround = true, buildingDensity = 4000 }: SceneProps) {
   return (
     <>
       {showSky && <Sky />}
@@ -344,7 +393,7 @@ export function SceneEnvironment({ showSky = true, showGround = true }: ScenePro
       <GroundGrid />
       <SceneLighting />
       <Runway />
-      <AirportBuildings />
+      <AirportBuildings density={buildingDensity} />
       {showSky && <fog attach="fog" args={['#87ceeb', 1000, 15000]} />}
     </>
   );

@@ -11,6 +11,7 @@ const MANEUVERS: ManeuverType[] = ['straight', 'roll', 'loop', 'climb', 'eight',
 const ALTITUDE = 300;
 
 // Debug controls state
+// Debug controls state
 interface DebugState {
   showSky: boolean;
   showGround: boolean;
@@ -18,12 +19,14 @@ interface DebugState {
   showFlame: boolean;
   showUI: boolean;
   zoomLevel: number;
+  buildingDensity: number;
   selectedAircraft: string; // 'random' or specific model
   selectedManeuver: string; // 'random' or specific maneuver
 }
 
 const STORAGE_KEY = 'flyby2-debug-settings';
 const DEFAULT_ZOOM = 40;
+const DEFAULT_DENSITY = 4000;
 
 // Load settings from localStorage
 function loadDebugSettings(): DebugState {
@@ -38,6 +41,7 @@ function loadDebugSettings(): DebugState {
         showFlame: parsed.showFlame !== false,
         showUI: parsed.showUI !== false,
         zoomLevel: parsed.zoomLevel ?? DEFAULT_ZOOM,
+        buildingDensity: parsed.buildingDensity ?? DEFAULT_DENSITY,
         selectedAircraft: parsed.selectedAircraft ?? 'random',
         selectedManeuver: parsed.selectedManeuver ?? 'random',
       };
@@ -52,6 +56,7 @@ function loadDebugSettings(): DebugState {
     showFlame: true,
     showUI: true,
     zoomLevel: DEFAULT_ZOOM,
+    buildingDensity: DEFAULT_DENSITY,
     selectedAircraft: 'random',
     selectedManeuver: 'random',
   };
@@ -67,55 +72,53 @@ function saveDebugSettings(state: DebugState) {
 }
 
 // Camera controller that tracks the aircraft
-function CameraController({ 
-  targetRef, 
+function CameraController({
+  targetRef,
   sessionKey,
   zoomLevel,
   onZoomChange,
-}: { 
-  targetRef: React.RefObject<THREE.Vector3>; 
+}: {
+  targetRef: React.RefObject<THREE.Vector3>;
   sessionKey: number;
   zoomLevel: number;
   onZoomChange: (zoom: number) => void;
 }) {
   const { camera, gl } = useThree();
   const fixedPosition = useRef(new THREE.Vector3());
-  
+
   const zoomLevelRef = useRef(zoomLevel);
   const onZoomChangeRef = useRef(onZoomChange);
-  
+
   useEffect(() => {
     zoomLevelRef.current = zoomLevel;
   }, [zoomLevel]);
-  
+
   useEffect(() => {
     onZoomChangeRef.current = onZoomChange;
   }, [onZoomChange]);
-  
+
   useEffect(() => {
     const angle = Math.random() * Math.PI * 2;
     const distance = 40 + Math.random() * 40;
-    
+
     fixedPosition.current.set(
       -distance * Math.sin(angle),
       ALTITUDE + (Math.random() * 40 - 20),
       distance * Math.cos(angle)
     );
-    
-    camera.position.copy(fixedPosition.current);
-  }, [camera, sessionKey]);
-  
+  }, [sessionKey]);
+
   useEffect(() => {
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.fov = zoomLevel;
       camera.updateProjectionMatrix();
     }
   }, [camera, zoomLevel]);
-  
+
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
-      
+
       if (camera instanceof THREE.PerspectiveCamera) {
         const zoomSpeed = 2;
         let newZoom = zoomLevelRef.current + event.deltaY * 0.01 * zoomSpeed;
@@ -123,23 +126,23 @@ function CameraController({
         onZoomChangeRef.current(newZoom);
       }
     };
-    
+
     const canvas = gl.domElement;
     canvas.addEventListener('wheel', handleWheel, { passive: false });
-    
+
     return () => {
       canvas.removeEventListener('wheel', handleWheel);
     };
   }, [camera, gl]);
-  
+
   useFrame(() => {
     camera.position.copy(fixedPosition.current);
-    
+
     if (targetRef.current) {
       camera.lookAt(targetRef.current);
     }
   });
-  
+
   return null;
 }
 
@@ -164,7 +167,7 @@ function AircraftWithTracking({
       positionRef.current.copy(position);
     }
   }, [positionRef]);
-  
+
   return (
     <Aircraft
       modelName={model}
@@ -179,30 +182,32 @@ function AircraftWithTracking({
 }
 
 // Inner scene component
-function FlybyScene({ 
-  showSky, 
-  showGround, 
+function FlybyScene({
+  showSky,
+  showGround,
   showSmoke,
   showFlame,
   zoomLevel,
+  buildingDensity,
   onZoomChange,
   onSceneInfoChange,
   selectedAircraft,
   selectedManeuver,
-}: { 
-  showSky: boolean; 
-  showGround: boolean; 
+}: {
+  showSky: boolean;
+  showGround: boolean;
   showSmoke: boolean;
   showFlame: boolean;
   zoomLevel: number;
+  buildingDensity: number;
   onZoomChange: (zoom: number) => void;
   onSceneInfoChange?: (model: string, maneuver: ManeuverType) => void;
   selectedAircraft: string;
   selectedManeuver: string;
 }) {
   const [sessionKey, setSessionKey] = useState(0);
-  const [model, setModel] = useState(() => 
-    selectedAircraft === 'random' 
+  const [model, setModel] = useState(() =>
+    selectedAircraft === 'random'
       ? AIRCRAFT_MODELS[Math.floor(Math.random() * AIRCRAFT_MODELS.length)]
       : selectedAircraft
   );
@@ -211,9 +216,9 @@ function FlybyScene({
       ? MANEUVERS[Math.floor(Math.random() * MANEUVERS.length)]
       : selectedManeuver as ManeuverType
   );
-  
+
   const aircraftPositionRef = useRef<THREE.Vector3>(new THREE.Vector3(0, ALTITUDE, 0));
-  
+
   // Update when selection changes from debug controls
   useEffect(() => {
     if (selectedAircraft !== 'random') {
@@ -221,18 +226,18 @@ function FlybyScene({
       setSessionKey(k => k + 1);
     }
   }, [selectedAircraft]);
-  
+
   useEffect(() => {
     if (selectedManeuver !== 'random') {
       setManeuver(selectedManeuver as ManeuverType);
       setSessionKey(k => k + 1);
     }
   }, [selectedManeuver]);
-  
+
   useEffect(() => {
     onSceneInfoChange?.(model, maneuver);
   }, [model, maneuver, onSceneInfoChange]);
-  
+
   const handleManeuverComplete = useCallback(() => {
     setTimeout(() => {
       const newModel = selectedAircraft === 'random'
@@ -241,18 +246,22 @@ function FlybyScene({
       const newManeuver = selectedManeuver === 'random'
         ? MANEUVERS[Math.floor(Math.random() * MANEUVERS.length)]
         : selectedManeuver as ManeuverType;
-      
+
       setModel(newModel);
       setManeuver(newManeuver);
       setSessionKey(k => k + 1);
     }, 500);
   }, [selectedAircraft, selectedManeuver]);
-  
+
   return (
     <>
-      <SceneEnvironment showSky={showSky} showGround={showGround} />
-      <CameraController 
-        targetRef={aircraftPositionRef} 
+      <SceneEnvironment
+        showSky={showSky}
+        showGround={showGround}
+        buildingDensity={buildingDensity}
+      />
+      <CameraController
+        targetRef={aircraftPositionRef}
         sessionKey={sessionKey}
         zoomLevel={zoomLevel}
         onZoomChange={onZoomChange}
@@ -289,25 +298,25 @@ function formatManeuverName(maneuver: string): string {
 }
 
 // Debug Controls UI Component
-function DebugControls({ 
-  state, 
+function DebugControls({
+  state,
   onChange,
   sceneModel,
   sceneManeuver,
-}: { 
-  state: DebugState; 
+}: {
+  state: DebugState;
   onChange: (key: keyof DebugState, value: boolean | number | string) => void;
   sceneModel?: string;
   sceneManeuver?: ManeuverType;
 }) {
   if (!state.showUI) return null;
-  
+
   return (
     <div className="cyberpunk-panel">
       <div className="cyberpunk-header">
         &gt; DEBUG_CONTROLS.SYS
       </div>
-      
+
       {/* Current Scene Info */}
       {(sceneModel || sceneManeuver) && (
         <div className="cyberpunk-scene-info">
@@ -324,11 +333,11 @@ function DebugControls({
           )}
         </div>
       )}
-      
+
       {/* Aircraft Selection */}
       <div className="cyberpunk-control">
         <div className="cyberpunk-select-label">SELECT_AIRCRAFT:</div>
-        <select 
+        <select
           value={state.selectedAircraft}
           onChange={(e) => onChange('selectedAircraft', e.target.value)}
           className="cyberpunk-select"
@@ -339,11 +348,11 @@ function DebugControls({
           ))}
         </select>
       </div>
-      
+
       {/* Maneuver Selection */}
       <div className="cyberpunk-control">
         <div className="cyberpunk-select-label">SELECT_MANEUVER:</div>
-        <select 
+        <select
           value={state.selectedManeuver}
           onChange={(e) => onChange('selectedManeuver', e.target.value)}
           className="cyberpunk-select"
@@ -354,7 +363,7 @@ function DebugControls({
           ))}
         </select>
       </div>
-      
+
       {/* Toggle Controls */}
       <div className="cyberpunk-control">
         <label className="cyberpunk-label">
@@ -367,7 +376,7 @@ function DebugControls({
           <span>[{state.showSky ? 'X' : ' '}] SHOW_SKY</span>
         </label>
       </div>
-      
+
       <div className="cyberpunk-control">
         <label className="cyberpunk-label">
           <input
@@ -379,7 +388,7 @@ function DebugControls({
           <span>[{state.showGround ? 'X' : ' '}] SHOW_GROUND</span>
         </label>
       </div>
-      
+
       <div className="cyberpunk-control">
         <label className="cyberpunk-label">
           <input
@@ -391,7 +400,7 @@ function DebugControls({
           <span>[{state.showSmoke ? 'X' : ' '}] SMOKE_TRAILS</span>
         </label>
       </div>
-      
+
       <div className="cyberpunk-control">
         <label className="cyberpunk-label">
           <input
@@ -403,7 +412,7 @@ function DebugControls({
           <span>[{state.showFlame ? 'X' : ' '}] JET_FLAME</span>
         </label>
       </div>
-      
+
       {/* Zoom Slider */}
       <div className="cyberpunk-control">
         <div className="cyberpunk-slider-container">
@@ -425,13 +434,48 @@ function DebugControls({
           </div>
         </div>
       </div>
-      
+
+      {/* Building Density Slider */}
+      <div className="cyberpunk-control">
+        <div className="cyberpunk-slider-container">
+          <div className="cyberpunk-slider-label">
+            BUILDINGS: <span className="cyberpunk-value">{state.buildingDensity}</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="20000"
+            step="100"
+            value={state.buildingDensity}
+            onChange={(e) => onChange('buildingDensity', parseInt(e.target.value))}
+            className="cyberpunk-slider"
+          />
+          <div className="cyberpunk-slider-labels">
+            <span>FEW</span>
+            <span>MANY</span>
+          </div>
+        </div>
+      </div>
+
       <div className="cyberpunk-footer">
         &gt; PRESS [D] TO TOGGLE_UI
       </div>
     </div>
   );
 }
+
+const CAMERA_SETTINGS = {
+  position: [0, 150, 200] as [number, number, number],
+  fov: 35,
+  near: 1,
+  far: 30000,
+};
+
+const GL_SETTINGS = {
+  antialias: true,
+  toneMapping: THREE.ACESFilmicToneMapping,
+  toneMappingExposure: 1.0,
+};
 
 // Main App component
 export default function App() {
@@ -455,57 +499,49 @@ export default function App() {
   const handleDebugChange = useCallback((key: keyof DebugState, value: boolean | number | string) => {
     setDebugState(prev => ({ ...prev, [key]: value }));
   }, []);
-  
+
   const handleZoomChange = useCallback((zoom: number) => {
     setDebugState(prev => ({ ...prev, zoomLevel: zoom }));
   }, []);
-  
+
   const handleSceneInfoChange = useCallback((model: string, maneuver: ManeuverType) => {
     setSceneInfo({ model, maneuver });
   }, []);
 
   return (
-    <div style={{ 
-      width: '100vw', 
-      height: '100vh', 
+    <div style={{
+      width: '100vw',
+      height: '100vh',
       background: '#000',
       overflow: 'hidden',
       cursor: debugState.showUI ? 'auto' : 'none',
     }}>
       <Canvas
         shadows
-        camera={{
-          position: [0, 150, 200],
-          fov: 35,
-          near: 1,
-          far: 30000,
-        }}
-        gl={{
-          antialias: true,
-          toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.0,
-        }}
+        camera={CAMERA_SETTINGS}
+        gl={GL_SETTINGS}
       >
-        <FlybyScene 
-          showSky={debugState.showSky} 
+        <FlybyScene
+          showSky={debugState.showSky}
           showGround={debugState.showGround}
           showSmoke={debugState.showSmoke}
           showFlame={debugState.showFlame}
           zoomLevel={debugState.zoomLevel}
+          buildingDensity={debugState.buildingDensity}
           onZoomChange={handleZoomChange}
           onSceneInfoChange={handleSceneInfoChange}
           selectedAircraft={debugState.selectedAircraft}
           selectedManeuver={debugState.selectedManeuver}
         />
       </Canvas>
-      
-      <DebugControls 
-        state={debugState} 
+
+      <DebugControls
+        state={debugState}
         onChange={handleDebugChange}
         sceneModel={sceneInfo.model}
         sceneManeuver={sceneInfo.maneuver}
       />
-      
+
       <div style={{
         position: 'absolute',
         bottom: 20,
@@ -521,9 +557,9 @@ export default function App() {
         zIndex: 1000,
       }}>
         <div style={{ fontWeight: 600, letterSpacing: '1px', textShadow: '0 0 5px rgba(51, 255, 51, 0.3)' }}>FLYBY2</div>
-        <a 
-          href="https://github.com/arkits/flyby" 
-          target="_blank" 
+        <a
+          href="https://github.com/arkits/flyby"
+          target="_blank"
           rel="noopener noreferrer"
           style={{
             color: 'rgba(51, 255, 51, 0.3)',
