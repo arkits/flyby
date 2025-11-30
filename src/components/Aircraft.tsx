@@ -40,8 +40,8 @@ function JetFlame({
     return new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        baseColor: { value: new THREE.Color(0xff6600) },
-        tipColor: { value: new THREE.Color(0xffff00) },
+        baseColor: { value: new THREE.Color(0xff4400) },
+        tipColor: { value: new THREE.Color(0xffaa00) },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -64,15 +64,15 @@ function JetFlame({
           float t = smoothstep(-2.0, 2.0, vY);
           vec3 color = mix(tipColor, baseColor, t);
           
-          // Flickering effect
-          float flicker = 0.8 + 0.2 * sin(time * 30.0 + vY * 5.0);
-          flicker *= 0.9 + 0.1 * sin(time * 50.0 - vY * 3.0);
+          // Subtle flickering effect - much slower and gentler
+          float flicker = 0.95 + 0.05 * sin(time * 8.0 + vY * 2.0);
           
           // Fade at edges
-          float alpha = (1.0 - t * 0.3) * flicker;
+          float alpha = (1.0 - t * 0.4) * flicker;
           alpha *= smoothstep(0.0, 0.3, 1.0 - abs(vUv.x - 0.5) * 2.0);
+          alpha *= 0.6; // Reduce overall opacity for subtlety
           
-          gl_FragColor = vec4(color * flicker * 1.5, alpha);
+          gl_FragColor = vec4(color * 0.8, alpha);
         }
       `,
       transparent: true,
@@ -98,15 +98,15 @@ function JetFlame({
     // Rotate to point backwards (cone points along Y by default)
     flameRef.current.rotateX(Math.PI / 2);
     
-    // Animate scale for flickering size
-    const scaleFlicker = 0.9 + 0.2 * Math.sin(timeRef.current * 25);
-    const lengthFlicker = 0.8 + 0.4 * Math.sin(timeRef.current * 20);
+    // Subtle scale variation - much less animated
+    const scaleFlicker = 0.97 + 0.03 * Math.sin(timeRef.current * 6);
+    const lengthFlicker = 0.95 + 0.05 * Math.sin(timeRef.current * 5);
     flameRef.current.scale.set(scaleFlicker, lengthFlicker, scaleFlicker);
     
-    // Update point light for glow
+    // Update point light for glow - reduced intensity and variation
     if (glowRef.current) {
       glowRef.current.position.copy(flameRef.current.position);
-      glowRef.current.intensity = 2 + Math.sin(timeRef.current * 30) * 0.5;
+      glowRef.current.intensity = 0.8 + Math.sin(timeRef.current * 8) * 0.2;
     }
   });
   
@@ -120,9 +120,9 @@ function JetFlame({
       />
       <pointLight 
         ref={glowRef}
-        color="#ff6600"
-        intensity={2}
-        distance={20}
+        color="#ff4400"
+        intensity={0.8}
+        distance={15}
         decay={2}
       />
     </>
