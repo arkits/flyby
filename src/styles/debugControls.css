@@ -193,3 +193,99 @@
 .cyberpunk-panel ::-webkit-scrollbar-thumb:hover {
   background: #66ff66; 
 }
+
+/* Telemetry Panel - Top Right */
+.telemetry-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  background: rgba(10, 15, 10, 0.9);
+  border: 1px solid #33ff33;
+  padding: 16px 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: #33ff33;
+  user-select: none;
+  min-width: 220px;
+  box-shadow: 0 0 10px rgba(51, 255, 51, 0.2), inset 0 0 20px rgba(51, 255, 51, 0.05);
+  backdrop-filter: blur(4px);
+  text-shadow: 0 0 2px rgba(51, 255, 51, 0.4);
+}
+
+.telemetry-header {
+  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #33ff33;
+  border-bottom: 1px solid rgba(51, 255, 51, 0.5);
+  padding-bottom: 8px;
+  text-shadow: 0 0 5px rgba(51, 255, 51, 0.6);
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+
+.telemetry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.telemetry-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.telemetry-label {
+  font-size: 9px;
+  color: #668866;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.telemetry-value {
+  font-size: 14px;
+  color: #ccffcc;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(51, 255, 51, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.telemetry-value.large {
+  font-size: 18px;
+}
+
+.telemetry-bar-container {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(51, 255, 51, 0.3);
+}
+
+.telemetry-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #668866;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.telemetry-bar {
+  height: 4px;
+  background: rgba(51, 255, 51, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.telemetry-bar-fill {
+  height: 100%;
+  background: #33ff33;
+  box-shadow: 0 0 8px rgba(51, 255, 51, 0.6);
+  transition: width 0.1s ease-out;
+}

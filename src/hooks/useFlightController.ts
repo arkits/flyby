@@ -50,7 +50,7 @@ const MANEUVERS: Record<ManeuverType, ManeuverStep[]> = {
   ],
   climb: [
     { type: 'ahead', value: 450 },
-    { type: 'pitch', value: 12800, direction: 1 },
+    { type: 'pitch', value: 12800, direction: -1 },  // Negative to pitch UP (climb)
     { type: 'ahead', value: 500 },
   ],
   eight: [
@@ -123,6 +123,9 @@ export function useFlightController() {
     return maneuvers[Math.floor(Math.random() * maneuvers.length)];
   };
 
+  // Minimum altitude to prevent going below ground (accounts for aircraft size)
+  const MIN_ALTITUDE = 10;
+
   // Move aircraft forward
   const proceed = useCallback((distance: number) => {
     const state = stateRef.current;
@@ -133,6 +136,11 @@ export function useFlightController() {
     forward.applyEuler(euler);
     
     state.position.add(forward);
+    
+    // Safety clamp: never go below ground level
+    if (state.position.y < MIN_ALTITUDE) {
+      state.position.y = MIN_ALTITUDE;
+    }
   }, []);
 
   // Update flight state (call each frame)

@@ -1,19 +1,28 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Aircraft } from './components/Aircraft';
-import { SceneEnvironment } from './components/Scene';
+import { Aircraft, type TelemetryData } from './components/Aircraft';
+import { SceneEnvironment, type SkyboxMode } from './components/Scene';
 import { AIRCRAFT_MODELS } from './utils/srfParser';
 import type { ManeuverType } from './hooks/useFlightController';
 import './styles/debugControls.css';
 
 const MANEUVERS: ManeuverType[] = ['straight', 'roll', 'loop', 'climb', 'eight', 'turn360'];
 const ALTITUDE = 300;
+const MIN_ZOOM_FOV = 3;           // Tighter zoom (lower FOV = more zoom)
+const MAX_ZOOM_FOV = 90;          // Wide angle
+
+// Camera height presets
+type CameraHeightPreset = 'low' | 'medium' | 'high' | 'random';
+const CAMERA_HEIGHTS: Record<Exclude<CameraHeightPreset, 'random'>, { min: number; max: number; label: string }> = {
+  low: { min: 50, max: 150, label: 'LOW (Ground Level)' },
+  medium: { min: 250, max: 350, label: 'MEDIUM (Flight Level)' },
+  high: { min: 450, max: 600, label: 'HIGH (Aerial View)' },
+};
 
 // Debug controls state
-// Debug controls state
 interface DebugState {
-  showSky: boolean;
+  skybox: SkyboxMode;
   showGround: boolean;
   showSmoke: boolean;
   showFlame: boolean;
@@ -22,6 +31,7 @@ interface DebugState {
   buildingDensity: number;
   selectedAircraft: string; // 'random' or specific model
   selectedManeuver: string; // 'random' or specific maneuver
+  cameraHeight: CameraHeightPreset;
 }
 
 const STORAGE_KEY = 'flyby2-debug-settings';
@@ -34,8 +44,13 @@ function loadDebugSettings(): DebugState {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
+      // Migrate old showSky boolean to new skybox mode
+      let skybox: SkyboxMode = parsed.skybox ?? 'day';
+      if (typeof parsed.showSky === 'boolean') {
+        skybox = parsed.showSky ? 'day' : 'none';
+      }
       return {
-        showSky: parsed.showSky !== false,
+        skybox,
         showGround: parsed.showGround !== false,
         showSmoke: parsed.showSmoke !== false,
         showFlame: parsed.showFlame !== false,
@@ -44,13 +59,14 @@ function loadDebugSettings(): DebugState {
         buildingDensity: parsed.buildingDensity ?? DEFAULT_DENSITY,
         selectedAircraft: parsed.selectedAircraft ?? 'random',
         selectedManeuver: parsed.selectedManeuver ?? 'random',
+        cameraHeight: parsed.cameraHeight ?? 'random',
       };
     }
   } catch (e) {
     console.warn('Failed to load settings from localStorage:', e);
   }
   return {
-    showSky: true,
+    skybox: 'day',
     showGround: true,
     showSmoke: true,
     showFlame: true,
@@ -59,6 +75,7 @@ function loadDebugSettings(): DebugState {
     buildingDensity: DEFAULT_DENSITY,
     selectedAircraft: 'random',
     selectedManeuver: 'random',
+    cameraHeight: 'random',
   };
 }
 
@@ -77,11 +94,13 @@ function CameraController({
   sessionKey,
   zoomLevel,
   onZoomChange,
+  cameraHeight,
 }: {
   targetRef: React.RefObject<THREE.Vector3>;
   sessionKey: number;
   zoomLevel: number;
   onZoomChange: (zoom: number) => void;
+  cameraHeight: CameraHeightPreset;
 }) {
   const { camera, gl } = useThree();
   const fixedPosition = useRef(new THREE.Vector3());
@@ -100,13 +119,26 @@ function CameraController({
   useEffect(() => {
     const angle = Math.random() * Math.PI * 2;
     const distance = 40 + Math.random() * 40;
+    
+    // Determine camera altitude based on preset
+    let cameraAltitude: number;
+    if (cameraHeight === 'random') {
+      // Pick a random preset
+      const presets = Object.keys(CAMERA_HEIGHTS) as Array<keyof typeof CAMERA_HEIGHTS>;
+      const randomPreset = presets[Math.floor(Math.random() * presets.length)];
+      const { min, max } = CAMERA_HEIGHTS[randomPreset];
+      cameraAltitude = min + Math.random() * (max - min);
+    } else {
+      const { min, max } = CAMERA_HEIGHTS[cameraHeight];
+      cameraAltitude = min + Math.random() * (max - min);
+    }
 
     fixedPosition.current.set(
       -distance * Math.sin(angle),
-      ALTITUDE + (Math.random() * 40 - 20),
+      cameraAltitude,
       distance * Math.cos(angle)
     );
-  }, [sessionKey]);
+  }, [sessionKey, cameraHeight]);
 
   useEffect(() => {
     if (camera instanceof THREE.PerspectiveCamera) {
@@ -122,7 +154,7 @@ function CameraController({
       if (camera instanceof THREE.PerspectiveCamera) {
         const zoomSpeed = 2;
         let newZoom = zoomLevelRef.current + event.deltaY * 0.01 * zoomSpeed;
-        newZoom = Math.max(10, Math.min(90, newZoom));
+        newZoom = Math.max(MIN_ZOOM_FOV, Math.min(MAX_ZOOM_FOV, newZoom));
         onZoomChangeRef.current(newZoom);
       }
     };
@@ -154,6 +186,7 @@ function AircraftWithTracking({
   positionRef,
   showSmoke,
   showFlame,
+  onTelemetryUpdate,
 }: {
   model: string;
   maneuver: ManeuverType;
@@ -161,6 +194,7 @@ function AircraftWithTracking({
   positionRef: React.RefObject<THREE.Vector3>;
   showSmoke: boolean;
   showFlame: boolean;
+  onTelemetryUpdate?: (telemetry: TelemetryData) => void;
 }) {
   const handlePositionUpdate = useCallback((position: THREE.Vector3) => {
     if (positionRef.current) {
@@ -174,6 +208,7 @@ function AircraftWithTracking({
       maneuver={maneuver}
       onManeuverComplete={onComplete}
       onPositionUpdate={handlePositionUpdate}
+      onTelemetryUpdate={onTelemetryUpdate}
       showSmoke={showSmoke}
       showFlame={showFlame}
       scale={1}
@@ -183,7 +218,7 @@ function AircraftWithTracking({
 
 // Inner scene component
 function FlybyScene({
-  showSky,
+  skybox,
   showGround,
   showSmoke,
   showFlame,
@@ -191,10 +226,12 @@ function FlybyScene({
   buildingDensity,
   onZoomChange,
   onSceneInfoChange,
+  onTelemetryUpdate,
   selectedAircraft,
   selectedManeuver,
+  cameraHeight,
 }: {
-  showSky: boolean;
+  skybox: SkyboxMode;
   showGround: boolean;
   showSmoke: boolean;
   showFlame: boolean;
@@ -202,8 +239,10 @@ function FlybyScene({
   buildingDensity: number;
   onZoomChange: (zoom: number) => void;
   onSceneInfoChange?: (model: string, maneuver: ManeuverType) => void;
+  onTelemetryUpdate?: (telemetry: TelemetryData) => void;
   selectedAircraft: string;
   selectedManeuver: string;
+  cameraHeight: CameraHeightPreset;
 }) {
   const [sessionKey, setSessionKey] = useState(0);
   const [model, setModel] = useState(() =>
@@ -256,7 +295,7 @@ function FlybyScene({
   return (
     <>
       <SceneEnvironment
-        showSky={showSky}
+        skybox={skybox}
         showGround={showGround}
         buildingDensity={buildingDensity}
       />
@@ -265,6 +304,7 @@ function FlybyScene({
         sessionKey={sessionKey}
         zoomLevel={zoomLevel}
         onZoomChange={onZoomChange}
+        cameraHeight={cameraHeight}
       />
       <AircraftWithTracking
         key={sessionKey}
@@ -274,6 +314,7 @@ function FlybyScene({
         positionRef={aircraftPositionRef}
         showSmoke={showSmoke}
         showFlame={showFlame}
+        onTelemetryUpdate={onTelemetryUpdate}
       />
     </>
   );
@@ -295,6 +336,117 @@ function formatManeuverName(maneuver: string): string {
     random: 'RANDOM',
   };
   return names[maneuver] || maneuver.toUpperCase();
+}
+
+// Helper to convert radians to degrees
+function radToDeg(rad: number): number {
+  return ((rad * 180 / Math.PI) % 360 + 360) % 360;
+}
+
+// Helper to format heading as compass direction
+function formatHeading(rad: number): string {
+  const deg = radToDeg(rad);
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const index = Math.round(deg / 45) % 8;
+  return `${Math.round(deg).toString().padStart(3, '0')}° ${directions[index]}`;
+}
+
+// Global telemetry store for real-time updates (avoids React state overhead)
+const telemetryStore = {
+  current: null as TelemetryData | null,
+};
+
+// Telemetry Panel UI Component - uses requestAnimationFrame for real-time updates
+function TelemetryPanel({
+  showUI,
+}: {
+  showUI: boolean;
+}) {
+  const altitudeRef = useRef<HTMLSpanElement>(null);
+  const speedRef = useRef<HTMLSpanElement>(null);
+  const headingRef = useRef<HTMLSpanElement>(null);
+  const pitchRef = useRef<HTMLSpanElement>(null);
+  const bankRef = useRef<HTMLSpanElement>(null);
+  const maneuverRef = useRef<HTMLSpanElement>(null);
+  const progressTextRef = useRef<HTMLSpanElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+
+  // Use requestAnimationFrame to update DOM directly for smooth updates
+  useEffect(() => {
+    if (!showUI) return;
+
+    let animationId: number;
+    
+    const updateDisplay = () => {
+      const telemetry = telemetryStore.current;
+      if (telemetry) {
+        if (altitudeRef.current) altitudeRef.current.textContent = Math.round(telemetry.altitude).toLocaleString();
+        if (speedRef.current) speedRef.current.textContent = String(telemetry.speed);
+        if (headingRef.current) headingRef.current.textContent = formatHeading(telemetry.heading);
+        if (pitchRef.current) pitchRef.current.textContent = `${radToDeg(telemetry.pitch).toFixed(1)}°`;
+        if (bankRef.current) bankRef.current.textContent = `${radToDeg(telemetry.bank).toFixed(1)}°`;
+        if (maneuverRef.current) maneuverRef.current.textContent = formatManeuverName(telemetry.currentManeuver);
+        if (progressTextRef.current) progressTextRef.current.textContent = `${Math.round(telemetry.maneuverProgress * 100)}%`;
+        if (progressBarRef.current) progressBarRef.current.style.width = `${telemetry.maneuverProgress * 100}%`;
+      }
+      animationId = requestAnimationFrame(updateDisplay);
+    };
+    
+    animationId = requestAnimationFrame(updateDisplay);
+    return () => cancelAnimationFrame(animationId);
+  }, [showUI]);
+
+  if (!showUI) return null;
+
+  return (
+    <div className="telemetry-panel">
+      <div className="telemetry-header">
+        &gt; FLIGHT_TELEMETRY
+      </div>
+      
+      <div className="telemetry-grid">
+        <div className="telemetry-item">
+          <span className="telemetry-label">Altitude</span>
+          <span ref={altitudeRef} className="telemetry-value large">---</span>
+        </div>
+        
+        <div className="telemetry-item">
+          <span className="telemetry-label">Speed</span>
+          <span ref={speedRef} className="telemetry-value large">---</span>
+        </div>
+        
+        <div className="telemetry-item full-width">
+          <span className="telemetry-label">Heading</span>
+          <span ref={headingRef} className="telemetry-value">---</span>
+        </div>
+        
+        <div className="telemetry-item">
+          <span className="telemetry-label">Pitch</span>
+          <span ref={pitchRef} className="telemetry-value">---</span>
+        </div>
+        
+        <div className="telemetry-item">
+          <span className="telemetry-label">Bank</span>
+          <span ref={bankRef} className="telemetry-value">---</span>
+        </div>
+        
+        <div className="telemetry-item full-width">
+          <span className="telemetry-label">Maneuver</span>
+          <span ref={maneuverRef} className="telemetry-value">---</span>
+        </div>
+      </div>
+      
+      <div className="telemetry-bar-container">
+        <div className="telemetry-bar-label">
+          <span>Progress</span>
+          <span ref={progressTextRef}>0%</span>
+        </div>
+        <div className="telemetry-bar">
+          <div ref={progressBarRef} className="telemetry-bar-fill" style={{ width: '0%' }} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Debug Controls UI Component
@@ -364,19 +516,36 @@ function DebugControls({
         </select>
       </div>
 
-      {/* Toggle Controls */}
+      {/* Camera Height Selection */}
       <div className="cyberpunk-control">
-        <label className="cyberpunk-label">
-          <input
-            type="checkbox"
-            checked={state.showSky}
-            onChange={(e) => onChange('showSky', e.target.checked)}
-            className="cyberpunk-checkbox"
-          />
-          <span>[{state.showSky ? 'X' : ' '}] SHOW_SKY</span>
-        </label>
+        <div className="cyberpunk-select-label">CAMERA_HEIGHT:</div>
+        <select
+          value={state.cameraHeight}
+          onChange={(e) => onChange('cameraHeight', e.target.value)}
+          className="cyberpunk-select"
+        >
+          <option value="random">[ RANDOM ]</option>
+          {(Object.keys(CAMERA_HEIGHTS) as Array<keyof typeof CAMERA_HEIGHTS>).map(key => (
+            <option key={key} value={key}>{CAMERA_HEIGHTS[key].label}</option>
+          ))}
+        </select>
       </div>
 
+      {/* Skybox Selection */}
+      <div className="cyberpunk-control">
+        <div className="cyberpunk-select-label">SKYBOX:</div>
+        <select
+          value={state.skybox}
+          onChange={(e) => onChange('skybox', e.target.value)}
+          className="cyberpunk-select"
+        >
+          <option value="none">NONE</option>
+          <option value="day">DAY</option>
+          <option value="night">NIGHT</option>
+        </select>
+      </div>
+
+      {/* Toggle Controls */}
       <div className="cyberpunk-control">
         <label className="cyberpunk-label">
           <input
@@ -421,8 +590,8 @@ function DebugControls({
           </div>
           <input
             type="range"
-            min="10"
-            max="90"
+            min={MIN_ZOOM_FOV}
+            max={MAX_ZOOM_FOV}
             step="1"
             value={state.zoomLevel}
             onChange={(e) => onChange('zoomLevel', parseFloat(e.target.value))}
@@ -508,6 +677,11 @@ export default function App() {
     setSceneInfo({ model, maneuver });
   }, []);
 
+  // Update global telemetry store for real-time display
+  const handleTelemetryUpdate = useCallback((data: TelemetryData) => {
+    telemetryStore.current = data;
+  }, []);
+
   return (
     <div style={{
       width: '100vw',
@@ -522,7 +696,7 @@ export default function App() {
         gl={GL_SETTINGS}
       >
         <FlybyScene
-          showSky={debugState.showSky}
+          skybox={debugState.skybox}
           showGround={debugState.showGround}
           showSmoke={debugState.showSmoke}
           showFlame={debugState.showFlame}
@@ -530,8 +704,10 @@ export default function App() {
           buildingDensity={debugState.buildingDensity}
           onZoomChange={handleZoomChange}
           onSceneInfoChange={handleSceneInfoChange}
+          onTelemetryUpdate={handleTelemetryUpdate}
           selectedAircraft={debugState.selectedAircraft}
           selectedManeuver={debugState.selectedManeuver}
+          cameraHeight={debugState.cameraHeight}
         />
       </Canvas>
 
@@ -540,6 +716,10 @@ export default function App() {
         onChange={handleDebugChange}
         sceneModel={sceneInfo.model}
         sceneManeuver={sceneInfo.maneuver}
+      />
+
+      <TelemetryPanel
+        showUI={debugState.showUI}
       />
 
       <div style={{

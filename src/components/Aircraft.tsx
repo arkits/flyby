@@ -6,11 +6,23 @@ import { useFlightController } from '../hooks/useFlightController';
 import { ExhaustTrail, WingVaporTrails } from './SmokeTrail';
 import type { ManeuverType } from '../hooks/useFlightController';
 
+// Telemetry data for HUD display
+export interface TelemetryData {
+  altitude: number;
+  speed: number;
+  heading: number;
+  pitch: number;
+  bank: number;
+  maneuverProgress: number;
+  currentManeuver: ManeuverType;
+}
+
 interface AircraftProps {
   modelName?: string;
   maneuver?: ManeuverType;
   onManeuverComplete?: () => void;
   onPositionUpdate?: (position: THREE.Vector3) => void;
+  onTelemetryUpdate?: (telemetry: TelemetryData) => void;
   showSmoke?: boolean;
   showFlame?: boolean;
   scale?: number;
@@ -161,11 +173,15 @@ function JetFlame({
   );
 }
 
+// Speed constant for telemetry
+const AIRCRAFT_SPEED = 100; // units per second
+
 export function Aircraft({ 
   modelName, 
   maneuver, 
   onManeuverComplete,
   onPositionUpdate,
+  onTelemetryUpdate,
   showSmoke = true,
   showFlame = true,
   scale = 1 
@@ -206,7 +222,8 @@ export function Aircraft({
       flight.initFlight(maneuver);
       completedRef.current = false;
     }
-  }, [geometry, maneuver, flight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geometry, maneuver]);
 
   // Material with vertex colors and flat shading
   const material = useMemo(() => {
@@ -239,6 +256,20 @@ export function Aircraft({
     isEmittingRef.current = flight.isEmittingSmoke();
     
     onPositionUpdate?.(position);
+    
+    // Send telemetry update
+    if (onTelemetryUpdate) {
+      const state = flight.state;
+      onTelemetryUpdate({
+        altitude: position.y,
+        speed: AIRCRAFT_SPEED,
+        heading: state.heading,
+        pitch: state.pitch,
+        bank: state.bank,
+        maneuverProgress: state.maneuverProgress,
+        currentManeuver: state.currentManeuver,
+      });
+    }
     
     if (flight.isComplete() && !completedRef.current) {
       completedRef.current = true;
