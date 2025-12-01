@@ -35,8 +35,22 @@ const fragmentShader = `
     scanline = 1.0 - scanline * scanlineIntensity;
     color *= scanline;
     
-    // Vignette
-    float vignette = 1.0 - dist * vignetteIntensity;
+    // Enhanced border vignette effect
+    // Calculate distance from edges (0.0 at center, 1.0 at edges)
+    vec2 edgeDist = min(uv, 1.0 - uv);
+    float minEdgeDist = min(edgeDist.x, edgeDist.y);
+    
+    // Create smooth vignette falloff from edges
+    // More aggressive falloff near borders
+    float borderVignette = smoothstep(0.0, 0.3, minEdgeDist);
+    
+    // Radial vignette from center (existing effect)
+    float radialVignette = 1.0 - dist * vignetteIntensity * 0.5;
+    
+    // Combine both vignette effects for subtle border darkening
+    float vignette = min(borderVignette, radialVignette);
+    // Apply with subtle intensity to keep it subtle
+    vignette = mix(1.0, vignette, vignetteIntensity * 0.6);
     color *= vignette;
     
     // Subtle noise/flicker

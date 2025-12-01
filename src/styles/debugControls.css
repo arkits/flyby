@@ -315,5 +315,5 @@
   height: 100%;
   background: #33ff33;
   box-shadow: 0 0 8px rgba(51, 255, 51, 0.6);
-  transition: width 0.1s ease-out;
+  /* Transition removed - smoothing handled in JavaScript for better control */
 }

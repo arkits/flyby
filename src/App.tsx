@@ -375,14 +375,17 @@ function TelemetryPanel({
   const maneuverRef = useRef<HTMLSpanElement>(null);
   const progressTextRef = useRef<HTMLSpanElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const displayedProgressRef = useRef<number>(0);
+  const lastFrameTimeRef = useRef<number>(0);
 
   // Use requestAnimationFrame to update DOM directly for smooth updates
   useEffect(() => {
     if (!showUI) return;
 
     let animationId: number;
+    lastFrameTimeRef.current = performance.now();
     
-    const updateDisplay = () => {
+    const updateDisplay = (currentTime: number) => {
       const telemetry = telemetryStore.current;
       if (telemetry) {
         if (altitudeRef.current) altitudeRef.current.textContent = Math.round(telemetry.altitude).toLocaleString();
@@ -391,8 +394,29 @@ function TelemetryPanel({
         if (pitchRef.current) pitchRef.current.textContent = `${radToDeg(telemetry.pitch).toFixed(1)}°`;
         if (bankRef.current) bankRef.current.textContent = `${radToDeg(telemetry.bank).toFixed(1)}°`;
         if (maneuverRef.current) maneuverRef.current.textContent = formatManeuverName(telemetry.currentManeuver);
-        if (progressTextRef.current) progressTextRef.current.textContent = `${Math.round(telemetry.maneuverProgress * 100)}%`;
-        if (progressBarRef.current) progressBarRef.current.style.width = `${telemetry.maneuverProgress * 100}%`;
+        
+        // Smoothly interpolate progress bar
+        const targetProgress = telemetry.maneuverProgress;
+        const currentProgress = displayedProgressRef.current;
+        const deltaTime = (currentTime - lastFrameTimeRef.current) / 1000; // Convert to seconds
+        lastFrameTimeRef.current = currentTime;
+        
+        // If target is less than current (new maneuver started), reset immediately
+        if (targetProgress < currentProgress) {
+          displayedProgressRef.current = targetProgress;
+        } else {
+          // Smooth interpolation factor (higher = faster, but still smooth)
+          // This creates a smooth exponential interpolation
+          const smoothingFactor = 8.0; // Adjust this to control smoothness (higher = faster response)
+          const progressDiff = targetProgress - currentProgress;
+          const newProgress = currentProgress + progressDiff * (1 - Math.exp(-smoothingFactor * deltaTime));
+          displayedProgressRef.current = newProgress;
+        }
+        
+        const progressPercent = displayedProgressRef.current * 100;
+        
+        if (progressTextRef.current) progressTextRef.current.textContent = `${Math.round(progressPercent)}%`;
+        if (progressBarRef.current) progressBarRef.current.style.width = `${progressPercent}%`;
       }
       animationId = requestAnimationFrame(updateDisplay);
     };
