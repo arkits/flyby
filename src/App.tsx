@@ -1,10 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { EffectComposer } from '@react-three/postprocessing';
 import { Aircraft, type TelemetryData } from './components/Aircraft';
 import { SceneEnvironment, type SkyboxMode } from './components/Scene';
 import { AIRCRAFT_MODELS } from './utils/srfParser';
 import type { ManeuverType } from './hooks/useFlightController';
+import { CRTEffect } from './components/CRTEffect';
 import './styles/debugControls.css';
 
 const MANEUVERS: ManeuverType[] = ['straight', 'roll', 'loop', 'climb', 'eight', 'turn360'];
@@ -27,6 +29,7 @@ interface DebugState {
   showSmoke: boolean;
   showFlame: boolean;
   showUI: boolean;
+  showCRT: boolean;
   zoomLevel: number;
   buildingDensity: number;
   selectedAircraft: string; // 'random' or specific model
@@ -55,6 +58,7 @@ function loadDebugSettings(): DebugState {
         showSmoke: parsed.showSmoke !== false,
         showFlame: parsed.showFlame !== false,
         showUI: parsed.showUI !== false,
+        showCRT: parsed.showCRT !== false,
         zoomLevel: parsed.zoomLevel ?? DEFAULT_ZOOM,
         buildingDensity: parsed.buildingDensity ?? DEFAULT_DENSITY,
         selectedAircraft: parsed.selectedAircraft ?? 'random',
@@ -71,6 +75,7 @@ function loadDebugSettings(): DebugState {
     showSmoke: true,
     showFlame: true,
     showUI: true,
+    showCRT: true,
     zoomLevel: DEFAULT_ZOOM,
     buildingDensity: DEFAULT_DENSITY,
     selectedAircraft: 'random',
@@ -396,10 +401,8 @@ function TelemetryPanel({
     return () => cancelAnimationFrame(animationId);
   }, [showUI]);
 
-  if (!showUI) return null;
-
   return (
-    <div className="telemetry-panel">
+    <div className={`telemetry-panel ${showUI ? 'ui-visible' : 'ui-hidden'}`}>
       <div className="telemetry-header">
         &gt; FLIGHT_TELEMETRY
       </div>
@@ -461,10 +464,8 @@ function DebugControls({
   sceneModel?: string;
   sceneManeuver?: ManeuverType;
 }) {
-  if (!state.showUI) return null;
-
   return (
-    <div className="cyberpunk-panel">
+    <div className={`cyberpunk-panel ${state.showUI ? 'ui-visible' : 'ui-hidden'}`}>
       <div className="cyberpunk-header">
         &gt; DEBUG_CONTROLS.SYS
       </div>
@@ -579,6 +580,18 @@ function DebugControls({
             className="cyberpunk-checkbox"
           />
           <span>[{state.showFlame ? 'X' : ' '}] JET_FLAME</span>
+        </label>
+      </div>
+
+      <div className="cyberpunk-control">
+        <label className="cyberpunk-label">
+          <input
+            type="checkbox"
+            checked={state.showCRT}
+            onChange={(e) => onChange('showCRT', e.target.checked)}
+            className="cyberpunk-checkbox"
+          />
+          <span>[{state.showCRT ? 'X' : ' '}] CRT_EFFECT</span>
         </label>
       </div>
 
@@ -709,6 +722,17 @@ export default function App() {
           selectedManeuver={debugState.selectedManeuver}
           cameraHeight={debugState.cameraHeight}
         />
+        {debugState.showCRT && (
+          <EffectComposer>
+            <CRTEffect
+              curvature={0.25}
+              scanlineIntensity={0.3}
+              vignetteIntensity={0.5}
+              chromaticAberration={0.5}
+              noiseIntensity={0.02}
+            />
+          </EffectComposer>
+        )}
       </Canvas>
 
       <DebugControls
