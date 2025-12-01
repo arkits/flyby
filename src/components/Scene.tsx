@@ -16,6 +16,7 @@ const AIRPORT_OFFSET: [number, number, number] = [400, 0, 400];
 /**
  * Ground grid matching the original FLYBY2
  * Blue lines every 1000 units, from -20000 to 20000
+ * With subtle neon glow effect
  */
 export function GroundGrid() {
   const gridGeometry = useMemo(() => {
@@ -41,10 +42,51 @@ export function GroundGrid() {
     return geometry;
   }, []);
 
+  // Glow layer material - brighter blue with lower opacity for subtle glow
+  const glowMaterial = useMemo(() => {
+    return new THREE.LineBasicMaterial({
+      color: '#00aaff',
+      opacity: 0.25,
+      transparent: true,
+    });
+  }, []);
+
+  // Main grid lines material - original blue with enhanced emissive feel
+  const mainMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        baseColor: { value: new THREE.Color('#0044aa') },
+        glowColor: { value: new THREE.Color('#00aaff') },
+        opacity: { value: 0.6 },
+      },
+      vertexShader: `
+        void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 baseColor;
+        uniform vec3 glowColor;
+        uniform float opacity;
+        
+        void main() {
+          // Mix base color with glow color for subtle neon effect
+          vec3 finalColor = mix(baseColor, glowColor, 0.3);
+          gl_FragColor = vec4(finalColor, opacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+    });
+  }, []);
+
   return (
-    <lineSegments geometry={gridGeometry}>
-      <lineBasicMaterial color="#0044aa" opacity={0.6} transparent />
-    </lineSegments>
+    <group>
+      {/* Glow layer - rendered first for depth */}
+      <lineSegments geometry={gridGeometry} material={glowMaterial} />
+      {/* Main grid lines - rendered on top */}
+      <lineSegments geometry={gridGeometry} material={mainMaterial} />
+    </group>
   );
 }
 
@@ -72,9 +114,9 @@ const SKY_PRESETS = {
     fogColor: '#87ceeb',
   },
   night: {
-    topColor: '#0a0a1a',
-    bottomColor: '#1a1a3a',
-    fogColor: '#0d0d1a',
+    topColor: '#1a1a3a',
+    bottomColor: '#2a2a4a',
+    fogColor: '#1a1a2a',
   },
 };
 
@@ -135,7 +177,7 @@ export function Sky({ mode = 'day' }: { mode?: 'day' | 'night' }) {
 function Stars() {
   const starsGeometry = useMemo(() => {
     const positions: number[] = [];
-    const count = 2000;
+    const count = 6000;
     
     for (let i = 0; i < count; i++) {
       // Distribute stars on a sphere
@@ -143,8 +185,8 @@ function Stars() {
       const phi = Math.acos(2 * Math.random() - 1);
       const radius = 20000 + Math.random() * 4000;
       
-      // Only show stars in upper hemisphere
-      if (phi < Math.PI * 0.6) {
+      // Show stars in upper hemisphere (expanded coverage)
+      if (phi < Math.PI * 0.7) {
         positions.push(
           radius * Math.sin(phi) * Math.cos(theta),
           radius * Math.cos(phi),
@@ -162,10 +204,10 @@ function Stars() {
     <points geometry={starsGeometry}>
       <pointsMaterial
         color="#ffffff"
-        size={15}
+        size={22}
         sizeAttenuation
         transparent
-        opacity={0.8}
+        opacity={1.0}
       />
     </points>
   );
@@ -189,8 +231,8 @@ export function SceneLighting({ skybox = 'day' }: { skybox?: SkyboxMode }) {
       {/* Main directional light from above */}
       <directionalLight
         position={[0, 1000, 0]}
-        intensity={isNight ? 0.3 : 1.2}
-        color={isNight ? '#6688cc' : '#ffffff'}
+        intensity={isNight ? 0.6 : 1.2}
+        color={isNight ? '#88aaff' : '#ffffff'}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -202,14 +244,23 @@ export function SceneLighting({ skybox = 'day' }: { skybox?: SkyboxMode }) {
       />
 
       {/* Ambient light for fill */}
-      <ambientLight intensity={isNight ? 0.15 : 0.4} color={isNight ? '#334466' : '#ffffff'} />
+      <ambientLight intensity={isNight ? 0.35 : 0.4} color={isNight ? '#556688' : '#ffffff'} />
 
       {/* Hemisphere light for sky/ground color */}
       <hemisphereLight
-        color={isNight ? '#1a1a3a' : '#87ceeb'}
-        groundColor={isNight ? '#0a1a0a' : '#1a3d1a'}
-        intensity={isNight ? 0.2 : 0.3}
+        color={isNight ? '#2a2a4a' : '#87ceeb'}
+        groundColor={isNight ? '#1a1a2a' : '#1a3d1a'}
+        intensity={isNight ? 0.4 : 0.3}
       />
+
+      {/* Additional rim light for night mode to help aircraft visibility */}
+      {isNight && (
+        <directionalLight
+          position={[-500, 200, 500]}
+          intensity={0.3}
+          color="#88aaff"
+        />
+      )}
     </>
   );
 }
