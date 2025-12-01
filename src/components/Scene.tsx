@@ -228,19 +228,20 @@ export function SceneLighting({ skybox = 'day' }: { skybox?: SkyboxMode }) {
   
   return (
     <>
-      {/* Main directional light from above */}
+      {/* Main directional light from above at an angle for visible shadows */}
       <directionalLight
-        position={[0, 1000, 0]}
+        position={[2000, 1500, 2000]}
         intensity={isNight ? 0.6 : 1.2}
         color={isNight ? '#88aaff' : '#ffffff'}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-far={3000}
-        shadow-camera-left={-500}
-        shadow-camera-right={500}
-        shadow-camera-top={500}
-        shadow-camera-bottom={-500}
+        shadow-mapSize-width={4096}
+        shadow-mapSize-height={4096}
+        shadow-camera-far={20000}
+        shadow-camera-left={-10000}
+        shadow-camera-right={10000}
+        shadow-camera-top={10000}
+        shadow-camera-bottom={-10000}
+        shadow-bias={-0.0001}
       />
 
       {/* Ambient light for fill */}
