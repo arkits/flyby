@@ -17,14 +17,46 @@ interface AircraftProps {
 }
 
 /**
+ * Exhaust positions for each aircraft model
+ * Format: [x, y, z] offset from aircraft center in model space
+ * Z is typically negative (towards the back of the aircraft)
+ */
+const EXHAUST_POSITIONS: Record<string, THREE.Vector3[]> = {
+  'F16.SRF': [
+    new THREE.Vector3(0, 0, -7.7), // Single engine, center rear
+  ],
+  'F18.SRF': [
+    new THREE.Vector3(-1.3, 0, -7.7), // Left engine
+    new THREE.Vector3(1.3, 0, -7.7),  // Right engine
+  ],
+  'F15.SRF': [
+    new THREE.Vector3(-1.6, 0, -7.0), // Left engine
+    new THREE.Vector3(1.6, 0, -7.0),  // Right engine
+  ],
+  'F14SPRD.SRF': [
+    new THREE.Vector3(-1.2, 0, -7.5), // Left engine
+    new THREE.Vector3(1.2, 0, -7.5),  // Right engine
+  ],
+  'SU27.SRF': [
+    new THREE.Vector3(-1.3, 0, -7.7), // Left engine
+    new THREE.Vector3(1.3, 0, -7.7),  // Right engine
+  ],
+  'MIG21.SRF': [
+    new THREE.Vector3(0, 0, -7.5), // Single engine, center rear
+  ],
+};
+
+/**
  * Jet exhaust flame effect
  */
 function JetFlame({ 
   positionRef, 
-  quaternionRef 
+  quaternionRef,
+  exhaustOffset = new THREE.Vector3(0, 0, -8)
 }: { 
   positionRef: React.RefObject<THREE.Vector3>; 
   quaternionRef: React.RefObject<THREE.Quaternion>;
+  exhaustOffset?: THREE.Vector3;
 }) {
   const flameRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.PointLight>(null);
@@ -88,11 +120,11 @@ function JetFlame({
     timeRef.current += delta;
     flameMaterial.uniforms.time.value = timeRef.current;
     
-    // Position flame at exhaust (back of aircraft)
-    const exhaustOffset = new THREE.Vector3(0, 0, -8);
-    exhaustOffset.applyQuaternion(quaternionRef.current);
+    // Position flame at exhaust offset (relative to aircraft)
+    const offset = exhaustOffset.clone();
+    offset.applyQuaternion(quaternionRef.current);
     
-    flameRef.current.position.copy(positionRef.current).add(exhaustOffset);
+    flameRef.current.position.copy(positionRef.current).add(offset);
     flameRef.current.quaternion.copy(quaternionRef.current);
     
     // Rotate to point backwards (cone points along Y by default)
@@ -214,6 +246,11 @@ export function Aircraft({
     }
   });
 
+  // Get exhaust positions for current model
+  const exhaustPositions = useMemo(() => {
+    return EXHAUST_POSITIONS[selectedModel] || EXHAUST_POSITIONS['F16.SRF'];
+  }, [selectedModel]);
+
   if (!geometry) {
     return null;
   }
@@ -230,13 +267,15 @@ export function Aircraft({
         frustumCulled={false}
       />
       
-      {/* Jet exhaust flame */}
-      {showFlame && (
+      {/* Jet exhaust flames - one per engine */}
+      {showFlame && exhaustPositions.map((offset, index) => (
         <JetFlame
+          key={index}
           positionRef={trailPositionRef}
           quaternionRef={trailQuaternionRef}
+          exhaustOffset={offset.clone().multiplyScalar(scale)}
         />
-      )}
+      ))}
       
       {showSmoke && (
         <>
