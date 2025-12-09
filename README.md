@@ -1,6 +1,6 @@
 # FLYBY2
 
-A high-performance 3D flight maneuver visualizer built with React, Three.js, and Vite.
+This is a re-write of FLYBY2 - a Windows 95 screensaver. Covereted by Claude Code to React, Three.js, and Vite. Original source code - https://github.com/captainys/FLYBY2
 
 ## 🚀 Overview
 
