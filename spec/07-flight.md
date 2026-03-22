@@ -2,6 +2,24 @@
 
 Ported from `FLYBY.C` (562 lines).
 
+## Audit Update (2026-03-22)
+
+The checked-out runtime keeps the original maneuver programs, but it now also
+includes browser-only control and capture features:
+
+- deterministic query-parameter scenarios (`runway`, `signal`, `smoke_*`)
+- seeded runtime selection
+- a debug HUD with maneuver seeking and camera trim
+- map switching between raw browser variants
+
+Timing status:
+
+- simulation still advances in fixed `0.02` second steps
+- under slow browser frames, the loop still draws once and then consumes
+  multiple pending simulation steps
+- that keeps high-refresh displays from running too fast, but it is still only
+  partial parity with the original draw-per-step cadence
+
 ## State Machine
 
 ```

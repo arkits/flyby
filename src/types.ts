@@ -259,6 +259,7 @@ export interface GpuSrf {
 
 export interface GpuField {
   sceneLit: GpuPrimitive;
+  sceneShadow: GpuPrimitive;
   sceneUnlit: GpuPrimitive;
   sceneLines: GpuPrimitive;
   scenePoints: GpuPrimitive;
@@ -266,6 +267,7 @@ export interface GpuField {
   overlayLines: GpuPrimitive;
   overlayPoints: GpuPrimitive;
   sceneLitBufferSize: number;
+  sceneShadowBufferSize: number;
   sceneUnlitBufferSize: number;
   sceneLinesBufferSize: number;
   scenePointsBufferSize: number;
@@ -292,6 +294,85 @@ export interface Config {
 }
 
 export type FlybyMode = 'flyby2' | 'flyby2_s';
+export type AppMode = 'scriptedFlyby' | 'freeFlight' | 'drive';
+export type MapVariant = 'airport' | 'airport-improved' | 'airport-night' | 'downtown';
+export type SkyMode = 'clear' | 'night' | 'hazy';
+export type CameraMode = 'chase' | 'orbit' | 'cockpit';
+export type VehicleKind = 'aircraft' | 'car';
+
+export interface SkySettings {
+  mode: SkyMode;
+  topColor: Color;
+  horizonColor: Color;
+  bottomColor: Color;
+  curve: number;
+  glow: number;
+}
+
+export interface CloudSettings {
+  color: Color;
+  shadowColor: Color;
+  coverage: number;
+  softness: number;
+  scale: number;
+  bandScale: number;
+  speed: number;
+  density: number;
+  height: number;
+}
+
+export interface DirectionalLightSettings {
+  direction: Vec3;
+  color: Color;
+  intensity: number;
+  shadowStrength: number;
+}
+
+export interface HemisphereLightSettings {
+  skyColor: Color;
+  groundColor: Color;
+  intensity: number;
+  balance: number;
+}
+
+export interface FogSettings {
+  color: Color;
+  start: number;
+  end: number;
+  density: number;
+  heightFalloff: number;
+}
+
+export interface GroundMaterialSettings {
+  primary: Color;
+  secondary: Color;
+  accent: Color;
+  paved: Color;
+  detailScale: number;
+  breakupScale: number;
+  stripScale: number;
+  patchScale: number;
+  pavementBias: number;
+  shoulderDepth: number;
+}
+
+export interface EmissiveAccentSettings {
+  color: Color;
+  strength: number;
+  threshold: number;
+  saturationBoost: number;
+}
+
+export interface MapEnvironment {
+  key: MapVariant;
+  sky: SkySettings;
+  cloud: CloudSettings;
+  keyLight: DirectionalLightSettings;
+  hemisphere: HemisphereLightSettings;
+  fog: FogSettings;
+  ground: GroundMaterialSettings;
+  emissive: EmissiveAccentSettings;
+}
 export type CaptureScenario =
   | 'straight'
   | 'roll'
@@ -306,12 +387,128 @@ export type CaptureScenario =
 export type ManeuverKey = 'straight' | 'roll' | 'loop' | 'climb' | 'eight' | 'turn360';
 
 export interface RuntimeOptions {
+  appMode: AppMode;
   mode: FlybyMode;
+  mapVariant: MapVariant;
   seed: number | null;
   scenario: CaptureScenario | null;
   forcedAircraftIndex: number | null;
   forcedManeuver: ManeuverKey | null;
   smokeOverride: number | null;
+}
+
+export interface VehicleCommand {
+  throttle: number;
+  brake: number;
+  steer: number;
+  pitch: number;
+  roll: number;
+  yaw: number;
+  handbrake: number;
+  boost: number;
+  reset: boolean;
+}
+
+export interface VehicleCameraRigSpec {
+  chaseDistance: number;
+  chaseHeight: number;
+  chaseLead: number;
+  orbitDistance: number;
+  cockpitOffset: Vec3;
+  damping: number;
+}
+
+export interface AircraftDynamicsSpec {
+  minSpeed: number;
+  cruiseSpeed: number;
+  maxSpeed: number;
+  thrust: number;
+  boostThrust: number;
+  liftPower: number;
+  drag: number;
+  sideDrag: number;
+  pitchRate: number;
+  rollRate: number;
+  yawRate: number;
+  stallSpeed: number;
+  stallAngleDeg: number;
+}
+
+export interface VehicleWheelSpec {
+  localPosition: Vec3;
+  radius: number;
+  suspensionRestLength: number;
+}
+
+export interface CarDynamicsSpec {
+  engineForce: number;
+  brakeForce: number;
+  reverseForce: number;
+  handbrakeForce: number;
+  steerAngleDeg: number;
+  suspensionStiffness: number;
+  suspensionDamping: number;
+  rideHeight: number;
+  maxSpeed: number;
+  lateralGrip: number;
+  longitudinalGrip: number;
+  wheels: VehicleWheelSpec[];
+}
+
+export interface VehicleSpec {
+  key: string;
+  label: string;
+  kind: VehicleKind;
+  modelFile: string;
+  mass: number;
+  inertia: Vec3;
+  collisionHalfExtents: Vec3;
+  camera: VehicleCameraRigSpec;
+  aircraft?: AircraftDynamicsSpec;
+  car?: CarDynamicsSpec;
+}
+
+export interface VehicleState {
+  spec: VehicleSpec;
+  position: Vec3;
+  attitude: Attitude;
+  linearVelocity: Vec3;
+  angularVelocity: Vec3;
+  grounded: boolean;
+  throttle: number;
+  brake: number;
+  steer: number;
+  boost: number;
+  engineRpm: number;
+  gear: number;
+  stall: number;
+  aoaDeg: number;
+  wheelCompression: number[];
+  wheelGrounded: boolean[];
+}
+
+export interface CameraPose {
+  posAtt: PosAtt;
+  target: Vec3;
+  distance: number;
+  zoom: number;
+}
+
+export interface DynamicActorSnapshot {
+  key: string;
+  kind: VehicleKind;
+  gpuModel: GpuSrf;
+  transform: PosAtt;
+}
+
+export interface WorldSnapshot {
+  camera: PosAtt;
+  cameraZoom: number;
+  environment: MapEnvironment;
+  gpuField: GpuField;
+  dynamicActors: DynamicActorSnapshot[];
+  smokeGeometry: { lit: Float32Array; lines: Float32Array };
+  vaporGeometry: { lit: Float32Array; lines: Float32Array };
 }
 
 // --- Application State ---
@@ -345,10 +542,13 @@ export interface TelemetrySample {
 }
 
 export interface DebugPanelRefs {
+  mapSelect: HTMLSelectElement;
   aircraftSelect: HTMLSelectElement;
   maneuverSelect: HTMLSelectElement;
   randomizeButton: HTMLButtonElement;
+  previousManeuverButton: HTMLButtonElement;
   pauseButton: HTMLButtonElement;
+  nextManeuverButton: HTMLButtonElement;
   screenshotButton: HTMLButtonElement;
   cameraPanRange: HTMLInputElement;
   cameraTiltRange: HTMLInputElement;
@@ -391,6 +591,7 @@ export interface AppState {
   aircraft: SrfModel[];
   aircraftLabels: string[];
   field: Field;
+  environment: MapEnvironment;
   smokeClass: SmokeClass;
   vaporClass: SmokeClass;
   smokeInst: SmokeInst;

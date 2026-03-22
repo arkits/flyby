@@ -3,7 +3,7 @@
 
 import type {
   SrfModel, SrfPolygon, SrfVertex, PosAtt, Color, Vec3,
-  Field, Pc2, Pc2Object, Axis, Projection, GpuSrf, GpuField, Terrain, GpuPrimitive,
+  Field, Pc2, Pc2Object, Axis, Projection, GpuSrf, GpuField, Terrain, GpuPrimitive, MapEnvironment, WorldSnapshot, DynamicActorSnapshot,
 } from './types';
 import {
   vec3, getStdProjection, convLtoG, convGtoL, rotFastLtoG, rotFastGtoL,
@@ -15,26 +15,27 @@ import { SHADER_WGSL } from './shader.wgsl';
 const LIT_STRIDE = 13;
 // 6 floats per vertex: pos(3) + color(3)
 const UNLIT_STRIDE = 6;
-const PC2_OVERLAY_Y = 0.2;
+// Keep field-authored overlays just above the ground plane so they do not
+// z-fight, but avoid visibly slicing through nearby building bases.
+const PC2_OVERLAY_Y = 0.05;
 const PC2_LAYER_STEP_Y = 0.01;
 const SAMPLE_COUNT = 4;
-const BACKDROP_DEPTH_FACTOR = 0.5;
-const GROUND_SKY_PITCH_LIMIT = 14563;
 const SHOW_DEBUG_GRID = false;
 const POLYGON_EPSILON = 1e-5;
-type FieldBufferSizeKey =
-  | 'sceneLitBufferSize'
-  | 'sceneUnlitBufferSize'
-  | 'sceneLinesBufferSize'
-  | 'scenePointsBufferSize'
-  | 'overlayUnlitBufferSize'
-  | 'overlayLinesBufferSize'
-  | 'overlayPointsBufferSize';
+const SHADOW_GROUND_Y = 0.05;
+const SHADOW_COLOR: Color = { r: 0.05, g: 0.08, b: 0.05 };
+const GROUND_RING_SEGMENTS = [14, 16, 18, 20];
+const GROUND_RING_RADII = [480, 1400, 3600, 8600];
 
 const srfTriangulationCache = new WeakMap<SrfPolygon, number[]>();
 const pc2TriangulationCache = new WeakMap<Pc2Object, number[]>();
+const fieldGeometryWarnings = new Set<string>();
 
 export class Renderer {
+  private static readonly UNIFORM_FLOAT_COUNT = 140;
+  private static readonly UNIFORM_BYTE_SIZE = Renderer.UNIFORM_FLOAT_COUNT * 4;
+  private static readonly MAX_UNIFORM_DRAWS = 64;
+
   device!: GPUDevice;
   context!: GPUCanvasContext;
   format!: GPUTextureFormat;
@@ -42,18 +43,24 @@ export class Renderer {
   depthTexture!: GPUTexture;
   litPipeline!: GPURenderPipeline;
   litCulledPipeline!: GPURenderPipeline;
+  actorLitPipeline!: GPURenderPipeline;
+  actorLitCulledPipeline!: GPURenderPipeline;
   smokeLitPipeline!: GPURenderPipeline;
+  shadowPipeline!: GPURenderPipeline;
   overlayPipeline!: GPURenderPipeline;
   overlayLinePipeline!: GPURenderPipeline;
   overlayPointPipeline!: GPURenderPipeline;
   unlitPipeline!: GPURenderPipeline;
+  groundPipeline!: GPURenderPipeline;
   gridPipeline!: GPURenderPipeline;
   linePipeline!: GPURenderPipeline;
   smokeLinePipeline!: GPURenderPipeline;
   pointPipeline!: GPURenderPipeline;
-  backdropPipeline!: GPURenderPipeline;
+  skyPipeline!: GPURenderPipeline;
   uniformBuffer!: GPUBuffer;
+  uniformBindGroupLayout!: GPUBindGroupLayout;
   uniformBindGroup!: GPUBindGroup;
+  uniformStride = 0;
 
   // Pre-built geometry
   gridBuffer!: GPUBuffer;
@@ -61,21 +68,16 @@ export class Renderer {
   groundBuffer!: GPUBuffer;
   groundVertCount = 0;
   groundBufferSize = { value: 0 };
-  backdropBuffer!: GPUBuffer;
-  backdropVertCount = 0;
-  backdropBufferSize = { value: 0 };
 
   // Reusable smoke buffers (to prevent memory leak)
   smokeBuffer!: GPUBuffer;
   smokeBufferSize = { value: 0 };
+  smokeLineBuffer!: GPUBuffer;
+  smokeLineBufferSize = { value: 0 };
   vaporBuffer!: GPUBuffer;
   vaporBufferSize = { value: 0 };
-  aircraftOneSidedBuffer!: GPUBuffer;
-  aircraftOneSidedBufferSize = { value: 0 };
-  aircraftOneSidedVertCount = 0;
-  aircraftTwoSidedBuffer!: GPUBuffer;
-  aircraftTwoSidedBufferSize = { value: 0 };
-  aircraftTwoSidedVertCount = 0;
+  vaporLineBuffer!: GPUBuffer;
+  vaporLineBufferSize = { value: 0 };
 
   private width = 0;
   private height = 0;
@@ -99,30 +101,33 @@ export class Renderer {
     // Create shader module
     const shaderModule = this.device.createShaderModule({ code: SHADER_WGSL });
 
-    // Uniform buffer: mat4 viewProj(64) + mat4 model(64) + vec3 lightPos(12+4pad) + vec3 camPos(12+4pad) = 160
+    // Uniform buffer stores matrices plus environment lighting / fog / sky / ground parameters.
+    this.uniformStride = Math.ceil(
+      Renderer.UNIFORM_BYTE_SIZE / this.device.limits.minUniformBufferOffsetAlignment,
+    ) * this.device.limits.minUniformBufferOffsetAlignment;
     this.uniformBuffer = this.device.createBuffer({
-      size: 160,
+      size: this.uniformStride * Renderer.MAX_UNIFORM_DRAWS,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    const bindGroupLayout = this.device.createBindGroupLayout({
+    this.uniformBindGroupLayout = this.device.createBindGroupLayout({
       entries: [{
         binding: 0,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform' },
+        buffer: { type: 'uniform', hasDynamicOffset: true },
       }],
     });
 
     this.uniformBindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
+      layout: this.uniformBindGroupLayout,
       entries: [{
         binding: 0,
-        resource: { buffer: this.uniformBuffer },
+        resource: { buffer: this.uniformBuffer, size: Renderer.UNIFORM_BYTE_SIZE },
       }],
     });
 
     const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [bindGroupLayout],
+      bindGroupLayouts: [this.uniformBindGroupLayout],
     });
     const smokeBlend: GPUBlendState = {
       color: {
@@ -198,6 +203,66 @@ export class Renderer {
       },
     });
 
+    this.actorLitPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vsLit',
+        buffers: [{
+          arrayStride: LIT_STRIDE * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },
+            { shaderLocation: 2, offset: 24, format: 'float32x3' },
+            { shaderLocation: 3, offset: 36, format: 'float32x3' },
+            { shaderLocation: 4, offset: 48, format: 'float32' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fsActorLit',
+        targets: [{ format: this.format }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      multisample: { count: SAMPLE_COUNT },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less-equal',
+        format: 'depth24plus',
+      },
+    });
+
+    this.actorLitCulledPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vsLit',
+        buffers: [{
+          arrayStride: LIT_STRIDE * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },
+            { shaderLocation: 2, offset: 24, format: 'float32x3' },
+            { shaderLocation: 3, offset: 36, format: 'float32x3' },
+            { shaderLocation: 4, offset: 48, format: 'float32' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fsActorLitOneSided',
+        targets: [{ format: this.format }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      multisample: { count: SAMPLE_COUNT },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less-equal',
+        format: 'depth24plus',
+      },
+    });
+
     this.smokeLitPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
@@ -216,7 +281,7 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsLit',
+        entryPoint: 'fsSmokeLit',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -224,6 +289,33 @@ export class Renderer {
       depthStencil: {
         depthWriteEnabled: false,
         depthCompare: 'less',
+        format: 'depth24plus',
+      },
+    });
+
+    this.shadowPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vsUnlit',
+        buffers: [{
+          arrayStride: UNLIT_STRIDE * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fsShadowUnlit',
+        targets: [{ format: this.format, blend: smokeBlend }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      multisample: { count: SAMPLE_COUNT },
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'less-equal',
         format: 'depth24plus',
       },
     });
@@ -244,8 +336,35 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsSmokeUnlit',
+        entryPoint: 'fsUnlit',
         targets: [{ format: this.format, blend: smokeBlend }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      multisample: { count: SAMPLE_COUNT },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less-equal',
+        format: 'depth24plus',
+      },
+    });
+
+    this.groundPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vsUnlit',
+        buffers: [{
+          arrayStride: UNLIT_STRIDE * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fsGround',
+        targets: [{ format: this.format }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       multisample: { count: SAMPLE_COUNT },
@@ -271,14 +390,15 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: 'fsOverlay',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
-        // Field PC2 overlays are drawn as underlays in the original engine.
-        depthWriteEnabled: false,
+        // Keep the runway overlay slightly above the support plane so its
+        // internal quad split does not fight the ground underneath.
+        depthWriteEnabled: true,
         depthCompare: 'less-equal',
         depthBias: -32,
         depthBiasSlopeScale: -1,
@@ -302,7 +422,7 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: 'fsOverlay',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'line-list', cullMode: 'none' },
@@ -310,9 +430,6 @@ export class Renderer {
       depthStencil: {
         depthWriteEnabled: false,
         depthCompare: 'less-equal',
-        depthBias: -32,
-        depthBiasSlopeScale: -1,
-        depthBiasClamp: 0,
         format: 'depth24plus',
       },
     });
@@ -332,7 +449,7 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: 'fsOverlay',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'point-list', cullMode: 'none' },
@@ -340,29 +457,19 @@ export class Renderer {
       depthStencil: {
         depthWriteEnabled: false,
         depthCompare: 'less-equal',
-        depthBias: -32,
-        depthBiasSlopeScale: -1,
-        depthBiasClamp: 0,
         format: 'depth24plus',
       },
     });
 
-    this.backdropPipeline = this.device.createRenderPipeline({
+    this.skyPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: 'vsSky',
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: 'fsSky',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -390,7 +497,7 @@ export class Renderer {
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: 'fsSmokeUnlit',
         targets: [{ format: this.format }],
       },
       primitive: { topology: 'line-list', cullMode: 'none' },
@@ -484,9 +591,6 @@ export class Renderer {
     });
 
     this.buildGridBuffer();
-    this.backdropBuffer = this.createBuffer(new Float32Array([0, 0, 0, 0, 0, 0]));
-    this.aircraftOneSidedBuffer = this.createBuffer(new Float32Array([0, 0, 0, 0]));
-    this.aircraftTwoSidedBuffer = this.createBuffer(new Float32Array([0, 0, 0, 0]));
   }
 
   resize(w: number, h: number): void {
@@ -516,10 +620,12 @@ export class Renderer {
 
   private createBuffer(data: Float32Array): GPUBuffer {
     const buf = this.device.createBuffer({
-      size: data.byteLength,
+      size: Math.max(16, data.byteLength),
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(buf, 0, data as Float32Array<ArrayBuffer>);
+    if (data.byteLength > 0) {
+      this.device.queue.writeBuffer(buf, 0, data as Float32Array<ArrayBuffer>);
+    }
     return buf;
   }
 
@@ -533,11 +639,13 @@ export class Renderer {
     // Create new or larger buffer
     if (currentBuf) currentBuf.destroy();
     const buf = this.device.createBuffer({
-      size: byteLength,
+      size: Math.max(16, byteLength),
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(buf, 0, data as Float32Array<ArrayBuffer>);
-    sizePtr.value = byteLength;
+    if (byteLength > 0) {
+      this.device.queue.writeBuffer(buf, 0, data as Float32Array<ArrayBuffer>);
+    }
+    sizePtr.value = Math.max(16, byteLength);
     return buf;
   }
 
@@ -569,23 +677,32 @@ export class Renderer {
     };
   }
 
-  buildFieldGpuBuffer(_field: Field): GpuField {
-    return {
-      sceneLit: this.createPrimitive(new Float32Array([0, 0, 0, 0]), LIT_STRIDE),
-      sceneUnlit: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      sceneLines: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      scenePoints: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      overlayUnlit: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      overlayLines: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      overlayPoints: this.createPrimitive(new Float32Array([0, 0, 0, 0]), UNLIT_STRIDE),
-      sceneLitBufferSize: 16,
-      sceneUnlitBufferSize: 16,
-      sceneLinesBufferSize: 16,
-      scenePointsBufferSize: 16,
-      overlayUnlitBufferSize: 16,
-      overlayLinesBufferSize: 16,
-      overlayPointsBufferSize: 16,
-    };
+  buildFieldGpuBuffer(field: Field, lightDirection: Vec3): GpuField {
+    try {
+      const staticScene = buildFieldSceneGeometry(field, null, lightDirection);
+      return {
+        sceneLit: this.createPrimitive(staticScene.scene.lit, LIT_STRIDE),
+        sceneShadow: this.createPrimitive(staticScene.scene.shadow, UNLIT_STRIDE),
+        sceneUnlit: this.createPrimitive(staticScene.scene.unlit, UNLIT_STRIDE),
+        sceneLines: this.createPrimitive(staticScene.scene.lines, UNLIT_STRIDE),
+        scenePoints: this.createPrimitive(staticScene.scene.points, UNLIT_STRIDE),
+        overlayUnlit: this.createPrimitive(staticScene.overlay.unlit, UNLIT_STRIDE),
+        overlayLines: this.createPrimitive(staticScene.overlay.lines, UNLIT_STRIDE),
+        overlayPoints: this.createPrimitive(staticScene.overlay.points, UNLIT_STRIDE),
+        sceneLitBufferSize: Math.max(16, staticScene.scene.lit.byteLength),
+        sceneShadowBufferSize: Math.max(16, staticScene.scene.shadow.byteLength),
+        sceneUnlitBufferSize: Math.max(16, staticScene.scene.unlit.byteLength),
+        sceneLinesBufferSize: Math.max(16, staticScene.scene.lines.byteLength),
+        scenePointsBufferSize: Math.max(16, staticScene.scene.points.byteLength),
+        overlayUnlitBufferSize: Math.max(16, staticScene.overlay.unlit.byteLength),
+        overlayLinesBufferSize: Math.max(16, staticScene.overlay.lines.byteLength),
+        overlayPointsBufferSize: Math.max(16, staticScene.overlay.points.byteLength),
+      };
+    } catch (error) {
+      const wrapped = new Error('Failed to assemble field GPU buffers.');
+      (wrapped as Error & { cause?: unknown }).cause = error;
+      throw wrapped;
+    }
   }
 
   private createPrimitive(data: Float32Array, stride: number): GpuPrimitive {
@@ -595,43 +712,117 @@ export class Renderer {
     };
   }
 
-  private syncPrimitive(
-    primitive: GpuPrimitive,
-    data: Float32Array,
-    stride: number,
-    name: string,
-    sizeKey: FieldBufferSizeKey,
-    owner: GpuField,
-  ): void {
-    if (data.length > 0) {
-      primitive.buffer = this.updateOrCreateBuffer(
-        data,
-        primitive.buffer,
-        { value: owner[sizeKey] },
-        name,
-      );
-      owner[sizeKey] = Math.max(owner[sizeKey], data.byteLength);
-      primitive.vertexCount = data.length / stride;
-    } else {
-      primitive.vertexCount = 0;
-    }
-  }
-
   // --- Uniform Updates ---
 
-  private writeUniforms(viewProj: Float32Array, model: Float32Array, lightPos: Vec3, camPos: Vec3): void {
-    const data = new Float32Array(40);
-    data.set(viewProj, 0);         // 0..15
-    data.set(model, 16);           // 16..31
-    data[32] = lightPos.x;         // 32..34 light
-    data[33] = lightPos.y;
-    data[34] = lightPos.z;
-    data[35] = 0;
-    data[36] = camPos.x;           // 36..38 camera
-    data[37] = camPos.y;
-    data[38] = camPos.z;
-    data[39] = 0;
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
+  private makeUniformData(
+    viewProj: Float32Array,
+    model: Float32Array,
+    eye: PosAtt,
+    prj: Projection,
+    environment: MapEnvironment,
+  ): Float32Array {
+    const basis = getCameraBasis(eye);
+    const data = new Float32Array(Renderer.UNIFORM_FLOAT_COUNT);
+    data.set(viewProj, 0);
+    data.set(model, 16);
+
+    writeVec4(data, 32, basis.right.x, basis.right.y, basis.right.z, 0);
+    writeVec4(data, 36, basis.up.x, basis.up.y, basis.up.z, 0);
+    writeVec4(data, 40, basis.forward.x, basis.forward.y, basis.forward.z, 0);
+    writeVec4(data, 44, eye.p.x, eye.p.y, eye.p.z, 0);
+    writeVec4(data, 48, (this.width * 0.5) / prj.magx, (this.height * 0.5) / prj.magy, this.width, this.height);
+    writeVec4(
+      data,
+      52,
+      environment.keyLight.direction.x,
+      environment.keyLight.direction.y,
+      environment.keyLight.direction.z,
+      environment.keyLight.intensity,
+    );
+    writeColor4(data, 56, environment.keyLight.color, environment.keyLight.shadowStrength);
+    writeColor4(data, 60, environment.hemisphere.skyColor, environment.hemisphere.intensity);
+    writeColor4(data, 64, environment.hemisphere.groundColor, environment.hemisphere.balance);
+    writeColor4(data, 68, environment.fog.color, 0);
+    writeVec4(
+      data,
+      72,
+      environment.fog.start,
+      environment.fog.end,
+      environment.fog.density,
+      environment.fog.heightFalloff,
+    );
+    writeColor4(data, 76, environment.sky.topColor, 0);
+    writeColor4(data, 80, environment.sky.horizonColor, 0);
+    writeColor4(data, 84, environment.sky.bottomColor, 0);
+    writeVec4(data, 88, environment.sky.curve, environment.sky.glow, skyModeId(environment), 0);
+    writeColor4(data, 92, environment.cloud.color, 0);
+    writeColor4(data, 96, environment.cloud.shadowColor, 0);
+    writeVec4(
+      data,
+      100,
+      environment.cloud.coverage,
+      environment.cloud.softness,
+      environment.cloud.scale,
+      environment.cloud.bandScale,
+    );
+    writeVec4(
+      data,
+      104,
+      environment.cloud.speed,
+      environment.cloud.density,
+      environment.cloud.height,
+      0,
+    );
+    writeColor4(data, 108, environment.ground.primary, 0);
+    writeColor4(data, 112, environment.ground.secondary, 0);
+    writeColor4(data, 116, environment.ground.accent, 0);
+    writeColor4(data, 120, environment.ground.paved, 0);
+    writeVec4(
+      data,
+      124,
+      environment.ground.detailScale,
+      environment.ground.breakupScale,
+      environment.ground.stripScale,
+      environment.ground.patchScale,
+    );
+    writeVec4(
+      data,
+      128,
+      environment.ground.pavementBias,
+      environment.ground.shoulderDepth,
+      mapVariantId(environment),
+      0,
+    );
+    writeColor4(data, 132, environment.emissive.color, 0);
+    writeVec4(
+      data,
+      136,
+      environment.emissive.strength,
+      environment.emissive.threshold,
+      environment.emissive.saturationBoost,
+      0,
+    );
+    return data;
+  }
+
+  private bindFrameUniforms(
+    passEncoder: GPURenderPassEncoder,
+    slotRef: { value: number },
+    viewProj: Float32Array,
+    model: Float32Array,
+    eye: PosAtt,
+    prj: Projection,
+    environment: MapEnvironment,
+  ): void {
+    const slot = slotRef.value;
+    if (slot >= Renderer.MAX_UNIFORM_DRAWS) {
+      throw new Error(`Frame exceeded uniform draw budget (${Renderer.MAX_UNIFORM_DRAWS})`);
+    }
+    const data = this.makeUniformData(viewProj, model, eye, prj, environment);
+    const offset = slot * this.uniformStride;
+    this.device.queue.writeBuffer(this.uniformBuffer, offset, data as Float32Array<ArrayBuffer>);
+    passEncoder.setBindGroup(0, this.uniformBindGroup, [offset]);
+    slotRef.value += 1;
   }
 
   // --- Drawing ---
@@ -640,32 +831,26 @@ export class Renderer {
     // clearScreen handled in endFrame via render pass
   }
 
-  render(
-    eye: PosAtt,
-    cameraZoom: number,
-    skyColor: Color,
-    groundColor: Color,
-    field: Field,
-    fieldGpu: GpuField,
-    aircraftModel: SrfModel,
-    aircraftPos: PosAtt,
-    smokeGeometry: { lit: Float32Array; lines: Float32Array },
-    vaporGeometry: { lit: Float32Array; lines: Float32Array },
-  ): void {
+  render(snapshot: WorldSnapshot): void {
+    const {
+      camera: eye,
+      cameraZoom,
+      environment,
+      gpuField: fieldGpu,
+      dynamicActors,
+      smokeGeometry,
+      vaporGeometry,
+    } = snapshot;
     const prj = getStdProjection(this.width, this.height);
     prj.magx *= 2 * cameraZoom;
     prj.magy *= 2 * cameraZoom;
     const viewProj = buildViewProjMatrix(eye, prj);
-    const identity = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-    const lightPos: Vec3 = { x: eye.p.x, y: eye.p.y + 1000, z: eye.p.z };
-    const camPos = eye.p;
+    const identity = buildModelMatrix({ p: vec3(0, 0, 0), a: { h: 0, p: 0, b: 0 } });
+    const uniformSlot = { value: 0 };
 
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();
-    const fieldScene = buildFieldSceneGeometry(field, eye);
-    const aircraftVerts = buildAircraftGeometry(aircraftModel, aircraftPos);
-    const groundPlaneVerts = buildGroundPlaneGeometry(eye, groundColor);
-    const backdropVerts = buildGroundSkyGeometry(this.width, this.height, eye, prj, groundColor, skyColor);
+    const groundPlaneVerts = buildGroundRingGeometry(eye, environment.ground.primary);
     if (groundPlaneVerts.length > 0) {
       this.groundBuffer = this.updateOrCreateBuffer(
         groundPlaneVerts,
@@ -677,52 +862,17 @@ export class Renderer {
     } else {
       this.groundVertCount = 0;
     }
-    if (backdropVerts.length > 0) {
-      this.backdropBuffer = this.updateOrCreateBuffer(
-        backdropVerts,
-        this.backdropBuffer,
-        this.backdropBufferSize,
-        'backdrop',
-      );
-      this.backdropVertCount = backdropVerts.length / UNLIT_STRIDE;
-    } else {
-      this.backdropVertCount = 0;
-    }
-    if (aircraftVerts.oneSided.length > 0) {
-      this.aircraftOneSidedBuffer = this.updateOrCreateBuffer(
-        aircraftVerts.oneSided,
-        this.aircraftOneSidedBuffer,
-        this.aircraftOneSidedBufferSize,
-        'aircraft-one-sided',
-      );
-      this.aircraftOneSidedVertCount = aircraftVerts.oneSided.length / LIT_STRIDE;
-    } else {
-      this.aircraftOneSidedVertCount = 0;
-    }
-    if (aircraftVerts.twoSided.length > 0) {
-      this.aircraftTwoSidedBuffer = this.updateOrCreateBuffer(
-        aircraftVerts.twoSided,
-        this.aircraftTwoSidedBuffer,
-        this.aircraftTwoSidedBufferSize,
-        'aircraft-two-sided',
-      );
-      this.aircraftTwoSidedVertCount = aircraftVerts.twoSided.length / LIT_STRIDE;
-    } else {
-      this.aircraftTwoSidedVertCount = 0;
-    }
-    this.syncPrimitive(fieldGpu.sceneLit, fieldScene.scene.lit, LIT_STRIDE, 'field-scene-lit', 'sceneLitBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.sceneUnlit, fieldScene.scene.unlit, UNLIT_STRIDE, 'field-scene-unlit', 'sceneUnlitBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.sceneLines, fieldScene.scene.lines, UNLIT_STRIDE, 'field-scene-lines', 'sceneLinesBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.scenePoints, fieldScene.scene.points, UNLIT_STRIDE, 'field-scene-points', 'scenePointsBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.overlayUnlit, fieldScene.overlay.unlit, UNLIT_STRIDE, 'field-overlay-unlit', 'overlayUnlitBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.overlayLines, fieldScene.overlay.lines, UNLIT_STRIDE, 'field-overlay-lines', 'overlayLinesBufferSize', fieldGpu);
-    this.syncPrimitive(fieldGpu.overlayPoints, fieldScene.overlay.points, UNLIT_STRIDE, 'field-overlay-points', 'overlayPointsBufferSize', fieldGpu);
 
     const passEncoder = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: this.colorTexture.createView(),
         resolveTarget: textureView,
-        clearValue: { r: skyColor.r, g: skyColor.g, b: skyColor.b, a: 1 },
+        clearValue: {
+          r: environment.sky.topColor.r,
+          g: environment.sky.topColor.g,
+          b: environment.sky.topColor.b,
+          a: 1,
+        },
         loadOp: 'clear',
         storeOp: 'store',
       }],
@@ -734,49 +884,40 @@ export class Renderer {
       },
     });
 
-    if (this.backdropVertCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setPipeline(this.backdropPipeline);
-      passEncoder.setVertexBuffer(0, this.backdropBuffer);
-      passEncoder.draw(this.backdropVertCount);
-    }
+    this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
+    passEncoder.setPipeline(this.skyPipeline);
+    passEncoder.draw(3);
 
     if (this.groundVertCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setPipeline(this.unlitPipeline);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
+      passEncoder.setPipeline(this.groundPipeline);
       passEncoder.setVertexBuffer(0, this.groundBuffer);
       passEncoder.draw(this.groundVertCount);
     }
 
     // --- Draw field overlays before inserted scene objects ---
     if (fieldGpu.overlayUnlit.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.overlayPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.overlayUnlit.buffer);
       passEncoder.draw(fieldGpu.overlayUnlit.vertexCount);
     }
     if (fieldGpu.overlayLines.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.overlayLinePipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.overlayLines.buffer);
       passEncoder.draw(fieldGpu.overlayLines.vertexCount);
     }
     if (fieldGpu.overlayPoints.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.overlayPointPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.overlayPoints.buffer);
       passEncoder.draw(fieldGpu.overlayPoints.vertexCount);
     }
 
     // --- Draw grid (lines) ---
     if (SHOW_DEBUG_GRID) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.gridPipeline);
       passEncoder.setVertexBuffer(0, this.gridBuffer);
       passEncoder.draw(this.gridVertCount);
@@ -784,48 +925,34 @@ export class Renderer {
 
     // --- Draw field objects (lit) ---
     if (fieldGpu.sceneUnlit.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.unlitPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.sceneUnlit.buffer);
       passEncoder.draw(fieldGpu.sceneUnlit.vertexCount);
     }
     if (fieldGpu.sceneLines.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.linePipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.sceneLines.buffer);
       passEncoder.draw(fieldGpu.sceneLines.vertexCount);
     }
     if (fieldGpu.scenePoints.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.pointPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.scenePoints.buffer);
       passEncoder.draw(fieldGpu.scenePoints.vertexCount);
     }
     if (fieldGpu.sceneLit.vertexCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.litPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, fieldGpu.sceneLit.buffer);
       passEncoder.draw(fieldGpu.sceneLit.vertexCount);
     }
-
-    // --- Draw aircraft (lit) ---
-    if (this.aircraftTwoSidedVertCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
-      passEncoder.setPipeline(this.litPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setVertexBuffer(0, this.aircraftTwoSidedBuffer);
-      passEncoder.draw(this.aircraftTwoSidedVertCount);
-    }
-    if (this.aircraftOneSidedVertCount > 0) {
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
-      passEncoder.setPipeline(this.litCulledPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setVertexBuffer(0, this.aircraftOneSidedBuffer);
-      passEncoder.draw(this.aircraftOneSidedVertCount);
+    if (fieldGpu.sceneShadow.vertexCount > 0) {
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
+      passEncoder.setPipeline(this.shadowPipeline);
+      passEncoder.setVertexBuffer(0, fieldGpu.sceneShadow.buffer);
+      passEncoder.draw(fieldGpu.sceneShadow.vertexCount);
     }
 
     // --- Draw smoke ---
@@ -836,24 +963,22 @@ export class Renderer {
         this.smokeBufferSize,
         'smoke',
       );
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLitPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, this.smokeBuffer);
       passEncoder.draw(smokeGeometry.lit.length / LIT_STRIDE);
     }
 
     if (smokeGeometry.lines.length > 0) {
-      this.vaporBuffer = this.updateOrCreateBuffer(
+      this.smokeLineBuffer = this.updateOrCreateBuffer(
         smokeGeometry.lines,
-        this.vaporBuffer,
-        this.vaporBufferSize,
+        this.smokeLineBuffer,
+        this.smokeLineBufferSize,
         'smoke-lines',
       );
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLinePipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setVertexBuffer(0, this.vaporBuffer);
+      passEncoder.setVertexBuffer(0, this.smokeLineBuffer);
       passEncoder.draw(smokeGeometry.lines.length / UNLIT_STRIDE);
     }
 
@@ -864,33 +989,98 @@ export class Renderer {
         this.vaporBufferSize,
         'vapor',
       );
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLitPipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
       passEncoder.setVertexBuffer(0, this.vaporBuffer);
       passEncoder.draw(vaporGeometry.lit.length / LIT_STRIDE);
     }
 
     if (vaporGeometry.lines.length > 0) {
-      this.vaporBuffer = this.updateOrCreateBuffer(
+      this.vaporLineBuffer = this.updateOrCreateBuffer(
         vaporGeometry.lines,
-        this.vaporBuffer,
-        this.vaporBufferSize,
+        this.vaporLineBuffer,
+        this.vaporLineBufferSize,
         'vapor-lines',
       );
-      this.writeUniforms(viewProj, identity, lightPos, camPos);
+      this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLinePipeline);
-      passEncoder.setBindGroup(0, this.uniformBindGroup);
-      passEncoder.setVertexBuffer(0, this.vaporBuffer);
+      passEncoder.setVertexBuffer(0, this.vaporLineBuffer);
       passEncoder.draw(vaporGeometry.lines.length / UNLIT_STRIDE);
+    }
+
+    // --- Draw dynamic actors after smoke so aircraft remain readable in
+    // smoke-heavy maneuvers. Smoke does not write depth in this adaptation.
+    for (const actor of dynamicActors) {
+      this.drawDynamicActor(passEncoder, actor, uniformSlot, viewProj, eye, prj, environment);
     }
 
     passEncoder.end();
     this.device.queue.submit([commandEncoder.finish()]);
   }
+
+  private drawDynamicActor(
+    passEncoder: GPURenderPassEncoder,
+    actor: DynamicActorSnapshot,
+    slotRef: { value: number },
+    viewProj: Float32Array,
+    eye: PosAtt,
+    prj: Projection,
+    environment: MapEnvironment,
+  ): void {
+    const modelMatrix = buildModelMatrix(actor.transform);
+    if (actor.gpuModel.twoSided.vertexCount > 0) {
+      this.bindFrameUniforms(passEncoder, slotRef, viewProj, modelMatrix, eye, prj, environment);
+      passEncoder.setPipeline(actor.kind === 'aircraft' ? this.actorLitPipeline : this.litPipeline);
+      passEncoder.setVertexBuffer(0, actor.gpuModel.twoSided.buffer);
+      passEncoder.draw(actor.gpuModel.twoSided.vertexCount);
+    }
+    if (actor.gpuModel.oneSided.vertexCount > 0) {
+      this.bindFrameUniforms(passEncoder, slotRef, viewProj, modelMatrix, eye, prj, environment);
+      passEncoder.setPipeline(actor.kind === 'aircraft' ? this.actorLitCulledPipeline : this.litCulledPipeline);
+      passEncoder.setVertexBuffer(0, actor.gpuModel.oneSided.buffer);
+      passEncoder.draw(actor.gpuModel.oneSided.vertexCount);
+    }
+  }
 }
 
 // --- Geometry Helpers ---
+
+function writeVec4(data: Float32Array, offset: number, x: number, y: number, z: number, w: number): void {
+  data[offset] = x;
+  data[offset + 1] = y;
+  data[offset + 2] = z;
+  data[offset + 3] = w;
+}
+
+function writeColor4(data: Float32Array, offset: number, color: Color, w: number): void {
+  writeVec4(data, offset, color.r, color.g, color.b, w);
+}
+
+function skyModeId(environment: MapEnvironment): number {
+  switch (environment.sky.mode) {
+    case 'night':
+      return 1;
+    case 'hazy':
+      return 2;
+    case 'clear':
+    default:
+      return 0;
+  }
+}
+
+function mapVariantId(environment: MapEnvironment): number {
+  switch (environment.key) {
+    case 'airport-improved':
+      return 1;
+    case 'airport-night':
+      return 2;
+    case 'downtown':
+      return 3;
+    case 'airport':
+    default:
+      return 0;
+  }
+}
 
 function pushLitVert(
   verts: number[], p: Vec3, n: Vec3, cullNormal: Vec3, c: Color, bright: number,
@@ -921,296 +1111,141 @@ function pushUnlitPoint(verts: number[], p: Vec3, c: Color): void {
   verts.push(p.x, p.y, p.z, c.r, c.g, c.b);
 }
 
-function buildGroundSkyGeometry(
-  width: number,
-  height: number,
-  eye: PosAtt,
-  prj: Projection,
-  groundColor: Color,
-  _skyColor: Color,
-): Float32Array {
-  const verts: number[] = [];
-  if (width <= 0 || height <= 0) {
-    return new Float32Array(verts);
+type ShadowPoint = { x: number; z: number };
+
+function projectShadowPoint(point: Vec3, lightDirection: Vec3): ShadowPoint | null {
+  const shadowDirection = vec3(-lightDirection.x, -lightDirection.y, -lightDirection.z);
+  if (Math.abs(shadowDirection.y) <= 1e-6) {
+    return null;
   }
-  const eyeAxs: Axis = { p: { ...eye.p }, a: { ...eye.a }, t: makeTrigonomy(eye.a) };
-
-  if (eye.a.p > GROUND_SKY_PITCH_LIMIT) {
-    return new Float32Array(verts);
+  const t = (SHADOW_GROUND_Y - point.y) / shadowDirection.y;
+  if (t < 0) {
+    return null;
   }
-  if (eye.a.p < -GROUND_SKY_PITCH_LIMIT) {
-    pushScreenQuad(verts, prj, eyeAxs, width, height, groundColor);
-    return new Float32Array(verts);
-  }
-
-  const horizon = horizonLineScreenPoints(prj, eye);
-  const clipped = clipLineToScreen(horizon[0], horizon[1], width, height);
-  if (clipped === null) {
-    if (eye.a.p <= 0) {
-      pushScreenQuad(verts, prj, eyeAxs, width, height, groundColor);
-    }
-    return new Float32Array(verts);
-  }
-
-  const screenRect: ScreenVertex[] = [
-    { x: 0, y: 0 },
-    { x: width, y: 0 },
-    { x: width, y: height },
-    { x: 0, y: height },
-  ];
-  const groundReference = { x: width * 0.5, y: height - 1 };
-  const groundArea = clipPolygonByLine(screenRect, clipped[0], clipped[1], groundReference);
-  pushScreenPolygon(verts, prj, eyeAxs, groundArea, groundColor);
-  return new Float32Array(verts);
-}
-
-function buildGroundPlaneGeometry(eye: PosAtt, groundColor: Color): Float32Array {
-  const span = 6000;
-  const centerX = Math.round(eye.p.x / 1000) * 1000;
-  const centerZ = Math.round(eye.p.z / 1000) * 1000;
-  const y = -0.05;
-  const p0 = vec3(centerX - span, y, centerZ - span);
-  const p1 = vec3(centerX + span, y, centerZ - span);
-  const p2 = vec3(centerX + span, y, centerZ + span);
-  const p3 = vec3(centerX - span, y, centerZ + span);
-  const verts: number[] = [];
-  pushUnlitTri(verts, p0, p1, p2, groundColor);
-  pushUnlitTri(verts, p0, p2, p3, groundColor);
-  return new Float32Array(verts);
-}
-
-type ScreenVertex = { x: number; y: number };
-
-function angle16ToRadians(angle: number): number {
-  return angle * Math.PI / 32768.0;
-}
-
-function rotate2d(point: ScreenVertex, radians: number): ScreenVertex {
-  const c = Math.cos(radians);
-  const s = Math.sin(radians);
   return {
-    x: c * point.x - s * point.y,
-    y: s * point.x + c * point.y,
+    x: point.x + shadowDirection.x * t,
+    z: point.z + shadowDirection.z * t,
   };
 }
 
-function screenToBackdropWorld(prj: Projection, eyeAxs: Axis, p: ScreenVertex): Vec3 {
-  const depth = prj.farz * BACKDROP_DEPTH_FACTOR;
-  const local = vec3(
-    ((p.x - prj.cx) * depth) / prj.magx,
-    ((prj.cy - p.y) * depth) / prj.magy,
-    depth,
-  );
-  const world = vec3(0, 0, 0);
-  convLtoG(world, local, eyeAxs);
-  return world;
+function shadowCross(o: ShadowPoint, a: ShadowPoint, b: ShadowPoint): number {
+  return ((a.x - o.x) * (b.z - o.z)) - ((a.z - o.z) * (b.x - o.x));
 }
 
-function snapToScreenBoundary(value: number, max: number): number {
-  const eps = 1e-4;
-  if (Math.abs(value) < eps) return 0;
-  if (Math.abs(value - max) < eps) return max;
-  return value;
-}
-
-function pushScreenTri(
-  verts: number[],
-  prj: Projection,
-  eyeAxs: Axis,
-  p0: ScreenVertex,
-  p1: ScreenVertex,
-  p2: ScreenVertex,
-  color: Color,
-): void {
-  pushUnlitTri(
-    verts,
-    screenToBackdropWorld(prj, eyeAxs, p0),
-    screenToBackdropWorld(prj, eyeAxs, p1),
-    screenToBackdropWorld(prj, eyeAxs, p2),
-    color,
-  );
-}
-
-function pushScreenPolygon(
-  verts: number[],
-  prj: Projection,
-  eyeAxs: Axis,
-  polygon: ScreenVertex[],
-  color: Color,
-): void {
-  if (polygon.length < 3) return;
-  for (let i = 1; i < polygon.length - 1; i++) {
-    pushScreenTri(verts, prj, eyeAxs, polygon[0], polygon[i], polygon[i + 1], color);
+function buildShadowHull(points: ShadowPoint[]): ShadowPoint[] {
+  if (points.length < 3) {
+    return [];
   }
-}
 
-function pushScreenQuad(
-  verts: number[],
-  prj: Projection,
-  eyeAxs: Axis,
-  width: number,
-  height: number,
-  color: Color,
-): void {
-  pushScreenPolygon(verts, prj, eyeAxs, [
-    { x: 0, y: 0 },
-    { x: width, y: 0 },
-    { x: width, y: height },
-    { x: 0, y: height },
-  ], color);
-}
-
-function horizonLineScreenPoints(prj: Projection, eye: PosAtt): [ScreenVertex, ScreenVertex] {
-  const pitchTan = Math.tan(angle16ToRadians(eye.a.p));
-  const centerVector = rotate2d(
-    { x: 0, y: -prj.magy * pitchTan },
-    -angle16ToRadians(eye.a.b),
-  );
-  const center = {
-    x: prj.cx + centerVector.x,
-    y: prj.cy - centerVector.y,
-  };
-
-  const leftVectorRotated = rotate2d({ x: 16384, y: 0 }, -angle16ToRadians(eye.a.b));
-  const leftVector = {
-    x: leftVectorRotated.x,
-    y: -leftVectorRotated.y,
-  };
-
-  return [
-    { x: center.x - leftVector.x, y: center.y - leftVector.y },
-    { x: center.x + leftVector.x, y: center.y + leftVector.y },
-  ];
-}
-
-function clipLineToScreen(
-  start: ScreenVertex,
-  end: ScreenVertex,
-  width: number,
-  height: number,
-): [ScreenVertex, ScreenVertex] | null {
-  const clipMin = { x: 0, y: 0 };
-  const clipMax = { x: width, y: height };
-  let x0 = start.x;
-  let y0 = start.y;
-  let x1 = end.x;
-  let y1 = end.y;
-
-  const computeOutCode = (x: number, y: number): number => {
-    let code = 0;
-    if (x < clipMin.x) code |= 1;
-    else if (x > clipMax.x) code |= 2;
-    if (y < clipMin.y) code |= 4;
-    else if (y > clipMax.y) code |= 8;
-    return code;
-  };
-
-  let out0 = computeOutCode(x0, y0);
-  let out1 = computeOutCode(x1, y1);
-  while (true) {
-    if ((out0 | out1) === 0) {
-      return [
-        { x: snapToScreenBoundary(x0, width), y: snapToScreenBoundary(y0, height) },
-        { x: snapToScreenBoundary(x1, width), y: snapToScreenBoundary(y1, height) },
-      ];
+  const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.z - b.z));
+  const lower: ShadowPoint[] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && shadowCross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
     }
-    if ((out0 & out1) !== 0) {
-      return null;
-    }
-
-    const outCode = out0 !== 0 ? out0 : out1;
-    let x = 0;
-    let y = 0;
-
-    if ((outCode & 8) !== 0) {
-      x = x0 + ((x1 - x0) * (clipMax.y - y0)) / (y1 - y0);
-      y = clipMax.y;
-    } else if ((outCode & 4) !== 0) {
-      x = x0 + ((x1 - x0) * (clipMin.y - y0)) / (y1 - y0);
-      y = clipMin.y;
-    } else if ((outCode & 2) !== 0) {
-      y = y0 + ((y1 - y0) * (clipMax.x - x0)) / (x1 - x0);
-      x = clipMax.x;
-    } else {
-      y = y0 + ((y1 - y0) * (clipMin.x - x0)) / (x1 - x0);
-      x = clipMin.x;
-    }
-
-    if (outCode === out0) {
-      x0 = x;
-      y0 = y;
-      out0 = computeOutCode(x0, y0);
-    } else {
-      x1 = x;
-      y1 = y;
-      out1 = computeOutCode(x1, y1);
-    }
+    lower.push(point);
   }
-}
 
-function lineSide(point: ScreenVertex, lineStart: ScreenVertex, lineEnd: ScreenVertex): number {
-  return (
-    (lineEnd.x - lineStart.x) * (point.y - lineStart.y)
-    - (lineEnd.y - lineStart.y) * (point.x - lineStart.x)
-  );
-}
-
-function intersectSegmentWithLine(
-  a: ScreenVertex,
-  b: ScreenVertex,
-  lineStart: ScreenVertex,
-  lineEnd: ScreenVertex,
-): ScreenVertex {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const ldx = lineEnd.x - lineStart.x;
-  const ldy = lineEnd.y - lineStart.y;
-  const denom = abx * ldy - aby * ldx;
-  if (Math.abs(denom) < 1e-6) {
-    return { ...b };
-  }
-  const t = ((lineStart.x - a.x) * ldy - (lineStart.y - a.y) * ldx) / denom;
-  return {
-    x: a.x + abx * t,
-    y: a.y + aby * t,
-  };
-}
-
-function clipPolygonByLine(
-  polygon: ScreenVertex[],
-  lineStart: ScreenVertex,
-  lineEnd: ScreenVertex,
-  referencePoint: ScreenVertex,
-): ScreenVertex[] {
-  const result: ScreenVertex[] = [];
-  if (polygon.length === 0) return result;
-  const referenceSide = lineSide(referencePoint, lineStart, lineEnd);
-
-  const inside = (point: ScreenVertex): boolean => {
-    const side = lineSide(point, lineStart, lineEnd);
-    if (referenceSide >= 0) {
-      return side >= -1e-4;
+  const upper: ShadowPoint[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const point = sorted[i];
+    while (upper.length >= 2 && shadowCross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
     }
-    return side <= 1e-4;
-  };
+    upper.push(point);
+  }
 
-  for (let i = 0; i < polygon.length; i++) {
-    const current = polygon[i];
-    const next = polygon[(i + 1) % polygon.length];
-    const currentInside = inside(current);
-    const nextInside = inside(next);
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
 
-    if (currentInside && nextInside) {
-      result.push({ ...next });
-    } else if (currentInside && !nextInside) {
-      result.push(intersectSegmentWithLine(current, next, lineStart, lineEnd));
-    } else if (!currentInside && nextInside) {
-      result.push(intersectSegmentWithLine(current, next, lineStart, lineEnd));
-      result.push({ ...next });
+function triangulateSrfShadow(verts: number[], model: SrfModel, pos: PosAtt, lightDirection: Vec3): void {
+  if (model.bbox.length === 0) {
+    return;
+  }
+
+  const min = model.bbox[0];
+  const max = model.bbox[7];
+  if ((max.y - min.y) < 1) {
+    return;
+  }
+
+  const axs: Axis = { p: { ...pos.p }, a: { ...pos.a }, t: makeTrigonomy(pos.a) };
+  const projected: ShadowPoint[] = [];
+  for (const corner of model.bbox) {
+    const worldPoint = vec3(0, 0, 0);
+    convLtoG(worldPoint, corner, axs);
+    const shadowPoint = projectShadowPoint(worldPoint, lightDirection);
+    if (shadowPoint !== null) {
+      projected.push(shadowPoint);
     }
   }
 
-  return result;
+  const hull = buildShadowHull(projected);
+  if (hull.length < 3) {
+    return;
+  }
+
+  const anchor = vec3(hull[0].x, SHADOW_GROUND_Y, hull[0].z);
+  for (let i = 1; i < hull.length - 1; i++) {
+    pushUnlitTri(
+      verts,
+      anchor,
+      vec3(hull[i].x, SHADOW_GROUND_Y, hull[i].z),
+      vec3(hull[i + 1].x, SHADOW_GROUND_Y, hull[i + 1].z),
+      SHADOW_COLOR,
+    );
+  }
+}
+
+function getCameraBasis(eye: PosAtt): { right: Vec3; up: Vec3; forward: Vec3 } {
+  const t = makeTrigonomy(eye.a);
+  const right = vec3(0, 0, 0);
+  const up = vec3(0, 0, 0);
+  const forward = vec3(0, 0, 0);
+  rotFastLtoG(right, vec3(1, 0, 0), t);
+  rotFastLtoG(up, vec3(0, 1, 0), t);
+  rotFastLtoG(forward, vec3(0, 0, 1), t);
+  return { right, up, forward };
+}
+
+function buildGroundRingGeometry(eye: PosAtt, groundColor: Color): Float32Array {
+  const verts: number[] = [];
+  const centerX = Math.round(eye.p.x / 120) * 120;
+  const centerZ = Math.round(eye.p.z / 120) * 120;
+  const y = -0.08;
+
+  let inner = 0;
+  for (let ringIndex = 0; ringIndex < GROUND_RING_RADII.length; ringIndex++) {
+    const outer = GROUND_RING_RADII[ringIndex];
+    const segments = GROUND_RING_SEGMENTS[ringIndex];
+    const step = (outer * 2) / segments;
+
+    for (let zIndex = 0; zIndex < segments; zIndex++) {
+      for (let xIndex = 0; xIndex < segments; xIndex++) {
+        const x0 = -outer + (xIndex * step);
+        const x1 = x0 + step;
+        const z0 = -outer + (zIndex * step);
+        const z1 = z0 + step;
+
+        if (inner > 0 && x0 >= -inner && x1 <= inner && z0 >= -inner && z1 <= inner) {
+          continue;
+        }
+
+        const p0 = vec3(centerX + x0, y, centerZ + z0);
+        const p1 = vec3(centerX + x1, y, centerZ + z0);
+        const p2 = vec3(centerX + x1, y, centerZ + z1);
+        const p3 = vec3(centerX + x0, y, centerZ + z1);
+        pushUnlitTri(verts, p0, p1, p2, groundColor);
+        pushUnlitTri(verts, p0, p2, p3, groundColor);
+      }
+    }
+
+    inner = outer;
+  }
+
+  return new Float32Array(verts);
 }
 
 
@@ -1399,22 +1434,24 @@ function triangulateSrfPolygonTransformed(
   plg: SrfPolygon,
   vertices: SrfVertex[],
   pos: PosAtt,
-  eye: PosAtt,
+  eye: PosAtt | null,
 ): void {
   if (plg.nVt < 3) return;
 
   const axs: Axis = { p: { ...pos.p }, a: { ...pos.a }, t: makeTrigonomy(pos.a) };
-  const worldCenter = vec3(0, 0, 0);
   const faceNormal = vec3(0, 0, 0);
-  convLtoG(worldCenter, plg.center, axs);
   rotFastLtoG(faceNormal, plg.normal, axs.t);
-  const faceDot = (
-    (worldCenter.x - eye.p.x) * faceNormal.x
-    + (worldCenter.y - eye.p.y) * faceNormal.y
-    + (worldCenter.z - eye.p.z) * faceNormal.z
-  );
-  if (plg.backFaceRemove !== 0 && faceDot > 0) {
-    return;
+  if (eye !== null) {
+    const worldCenter = vec3(0, 0, 0);
+    convLtoG(worldCenter, plg.center, axs);
+    const faceDot = (
+      (worldCenter.x - eye.p.x) * faceNormal.x
+      + (worldCenter.y - eye.p.y) * faceNormal.y
+      + (worldCenter.z - eye.p.z) * faceNormal.z
+    );
+    if (plg.backFaceRemove !== 0 && faceDot > 0) {
+      return;
+    }
   }
 
   const triangles = getSrfPolygonTriangles(plg, vertices);
@@ -1433,48 +1470,6 @@ function triangulateSrfPolygonTransformed(
   }
 }
 
-function triangulateSrfPolygonWorld(
-  oneSidedVerts: number[],
-  twoSidedVerts: number[],
-  plg: SrfPolygon,
-  vertices: SrfVertex[],
-  pos: PosAtt,
-): void {
-  if (plg.nVt < 3) return;
-
-  const dst = plg.backFaceRemove ? oneSidedVerts : twoSidedVerts;
-  const axs: Axis = { p: { ...pos.p }, a: { ...pos.a }, t: makeTrigonomy(pos.a) };
-  const faceNormal = vec3(0, 0, 0);
-  rotFastLtoG(faceNormal, plg.normal, axs.t);
-
-  const triangles = getSrfPolygonTriangles(plg, vertices);
-  for (let i = 0; i < triangles.length; i += 3) {
-    const tri = [triangles[i], triangles[i + 1], triangles[i + 2]];
-    for (const vertexIndex of tri) {
-      const src = vertices[plg.vertexIds[vertexIndex]];
-      const worldPos = vec3(0, 0, 0);
-      convLtoG(worldPos, src.pos, axs);
-
-      const useSmooth = plg.backFaceRemove !== 0 && src.smoothFlag !== 0;
-      const worldNormal = vec3(0, 0, 0);
-      rotFastLtoG(worldNormal, useSmooth ? src.normal : plg.normal, axs.t);
-      pushLitVert(dst, worldPos, worldNormal, faceNormal, plg.color, plg.bright);
-    }
-  }
-}
-
-function buildAircraftGeometry(model: SrfModel, pos: PosAtt): { oneSided: Float32Array; twoSided: Float32Array } {
-  const oneSidedVerts: number[] = [];
-  const twoSidedVerts: number[] = [];
-  for (const plg of model.polygons) {
-    triangulateSrfPolygonWorld(oneSidedVerts, twoSidedVerts, plg, model.vertices, pos);
-  }
-  return {
-    oneSided: new Float32Array(oneSidedVerts),
-    twoSided: new Float32Array(twoSidedVerts),
-  };
-}
-
 interface PrimitiveBuckets {
   lit: number[];
   unlit: number[];
@@ -1487,13 +1482,13 @@ function triangulatePc2(
   pc2: Pc2,
   pos: PosAtt,
   layerBase: number,
-  eye: PosAtt,
+  eye: PosAtt | null,
 ): void {
   const axs: Axis = { p: { ...pos.p }, a: { ...pos.a }, t: makeTrigonomy(pos.a) };
-  const eyeAxs: Axis = { p: { ...eye.p }, a: { ...eye.a }, t: makeTrigonomy(eye.a) };
+  const eyeAxs = eye === null ? null : { p: { ...eye.p }, a: { ...eye.a }, t: makeTrigonomy(eye.a) };
   for (let objectIndex = 0; objectIndex < pc2.objects.length; objectIndex++) {
     const obj = pc2.objects[objectIndex];
-    if (!isPc2ObjectVisible(obj, axs, eyeAxs, layerBase + objectIndex * PC2_LAYER_STEP_Y)) {
+    if (eyeAxs !== null && !isPc2ObjectVisible(obj, axs, eyeAxs, layerBase + objectIndex * PC2_LAYER_STEP_Y)) {
       continue;
     }
 
@@ -1741,25 +1736,75 @@ function distanceSquared(a: Vec3, b: Vec3): number {
   return dx * dx + dy * dy + dz * dz;
 }
 
+function isFiniteVec3(value: Vec3 | null | undefined): value is Vec3 {
+  return value !== null
+    && value !== undefined
+    && Number.isFinite(value.x)
+    && Number.isFinite(value.y)
+    && Number.isFinite(value.z);
+}
+
+function isValidPosAtt(value: PosAtt | null | undefined): value is PosAtt {
+  return value !== null
+    && value !== undefined
+    && isFiniteVec3(value.p)
+    && Number.isFinite(value.a.h)
+    && Number.isFinite(value.a.p)
+    && Number.isFinite(value.a.b);
+}
+
+function warnFieldGeometryOnce(key: string, message: string, payload: unknown): void {
+  if (fieldGeometryWarnings.has(key)) return;
+  fieldGeometryWarnings.add(key);
+  console.warn(message, payload);
+}
+
+function composePosAttSafe(local: PosAtt | null | undefined, parent: PosAtt, label: string): PosAtt | null {
+  if (!isValidPosAtt(local)) {
+    warnFieldGeometryOnce(label, `[renderer] Skipping field node with invalid local transform (${label}).`, local);
+    return null;
+  }
+  if (!isValidPosAtt(parent)) {
+    warnFieldGeometryOnce(`${label}:parent`, `[renderer] Skipping field node with invalid parent transform (${label}).`, parent);
+    return null;
+  }
+  return composePosAtt(local, parent);
+}
+
 function isWithinLod(pos: PosAtt, lodDist: number, eye: PosAtt): boolean {
-  return distanceSquared(pos.p, eye.p) <= lodDist * lodDist;
+  if (!isValidPosAtt(pos) || !isValidPosAtt(eye)) {
+    return false;
+  }
+  if (!Number.isFinite(lodDist)) {
+    return true;
+  }
+  const safeLodDist = Math.max(0, lodDist);
+  return distanceSquared(pos.p, eye.p) <= safeLodDist * safeLodDist;
 }
 
 function createPrimitiveBuckets(): PrimitiveBuckets {
   return { lit: [], unlit: [], lines: [], points: [] };
 }
 
-function buildFieldSceneGeometry(field: Field, eye: PosAtt): {
-  scene: { lit: Float32Array; unlit: Float32Array; lines: Float32Array; points: Float32Array };
+function buildFieldSceneGeometry(field: Field, eye: PosAtt | null, lightDirection: Vec3): {
+  scene: {
+    lit: Float32Array;
+    shadow: Float32Array;
+    unlit: Float32Array;
+    lines: Float32Array;
+    points: Float32Array;
+  };
   overlay: { unlit: Float32Array; lines: Float32Array; points: Float32Array };
 } {
   const scene = createPrimitiveBuckets();
+  const shadow: number[] = [];
   const overlay = createPrimitiveBuckets();
   const root: PosAtt = { p: vec3(0, 0, 0), a: { h: 0, p: 0, b: 0 } };
-  accumulateFieldGeometry(scene, overlay, field, root, eye);
+  accumulateFieldGeometry(scene, shadow, overlay, field, root, eye, lightDirection);
   return {
     scene: {
       lit: new Float32Array(scene.lit),
+      shadow: new Float32Array(shadow),
       unlit: new Float32Array(scene.unlit),
       lines: new Float32Array(scene.lines),
       points: new Float32Array(scene.points),
@@ -1774,57 +1819,89 @@ function buildFieldSceneGeometry(field: Field, eye: PosAtt): {
 
 function accumulateFieldGeometry(
   scene: PrimitiveBuckets,
+  shadow: number[],
   overlay: PrimitiveBuckets,
   field: Field,
   fieldPos: PosAtt,
-  eye: PosAtt,
+  eye: PosAtt | null,
+  lightDirection: Vec3,
 ): void {
   for (const fsrf of field.srf) {
-    const objPos = composePosAtt(fsrf.pos, fieldPos);
-    if (!isWithinLod(objPos, fsrf.lodDist, eye)) continue;
+    const objPos = composePosAttSafe(fsrf.pos, fieldPos, `srf:${fsrf.fn}:${fsrf.id}`);
+    if (objPos === null) continue;
+    if (eye !== null && !isWithinLod(objPos, fsrf.lodDist, eye)) continue;
     for (const plg of fsrf.srf.polygons) {
       triangulateSrfPolygonTransformed(scene.lit, plg, fsrf.srf.vertices, objPos, eye);
     }
+    triangulateSrfShadow(shadow, fsrf.srf, objPos, lightDirection);
   }
 
   for (const fter of field.ter) {
-    const objPos = composePosAtt(fter.pos, fieldPos);
-    if (!isWithinLod(objPos, fter.lodDist, eye)) continue;
+    const objPos = composePosAttSafe(fter.pos, fieldPos, `ter:${fter.fn}:${fter.id}`);
+    if (objPos === null) continue;
+    if (eye !== null && !isWithinLod(objPos, fter.lodDist, eye)) continue;
     triangulateTerrain(scene.lit, fter.ter, objPos);
   }
 
   for (const fplt of field.plt) {
-    const objPos = composePosAtt(fplt.pos, fieldPos);
-    if (!isWithinLod(objPos, fplt.lodDist, eye)) continue;
+    const objPos = composePosAttSafe(fplt.pos, fieldPos, `plt:${fplt.fn}`);
+    if (objPos === null) continue;
+    if (eye !== null && !isWithinLod(objPos, fplt.lodDist, eye)) continue;
     triangulatePc2(scene, fplt.pc2, objPos, 0, eye);
   }
 
   for (const fpc2 of field.pc2) {
     const overlayPos = composePc2OverlayPos(fpc2.pos, fieldPos);
-    if (!isWithinLod(overlayPos, fpc2.lodDist, eye)) continue;
+    if (overlayPos === null) continue;
+    if (eye !== null && !isWithinLod(overlayPos, fpc2.lodDist, eye)) continue;
     triangulatePc2(overlay, fpc2.pc2, overlayPos, PC2_OVERLAY_Y, eye);
   }
 
   for (const child of field.fld) {
-    const objPos = composePosAtt(child.pos, fieldPos);
-    if (!isWithinLod(objPos, child.lodDist, eye)) continue;
-    accumulateFieldGeometry(scene, overlay, child.fld, objPos, eye);
+    if (!child.fld) {
+      warnFieldGeometryOnce(`fld:${child.fn}:missing`, `[renderer] Skipping nested field with missing payload (${child.fn}).`, child);
+      continue;
+    }
+    const objPos = composePosAttSafe(child.pos, fieldPos, `fld:${child.fn}`);
+    if (objPos === null) continue;
+    if (eye !== null && !isWithinLod(objPos, child.lodDist, eye)) continue;
+    accumulateFieldGeometry(scene, shadow, overlay, child.fld, objPos, eye, lightDirection);
   }
 }
 
 
-function composePc2OverlayPos(local: PosAtt, parent: PosAtt): PosAtt {
+function composePc2OverlayPos(local: PosAtt, parent: PosAtt): PosAtt | null {
+  if (!isValidPosAtt(local)) {
+    warnFieldGeometryOnce('pc2:invalid-transform', '[renderer] Skipping overlay with invalid transform.', local);
+    return null;
+  }
   const pitched: PosAtt = {
     p: { ...local.p },
     a: { ...local.a },
   };
   pitchUp(pitched.a, pitched.a, -16384, 0);
-  return composePosAtt(pitched, parent);
+  return composePosAttSafe(pitched, parent, 'pc2:overlay');
 }
 
 // --- Matrix Construction ---
 // All matrices stored in COLUMN-MAJOR order for WebGPU/GLSL mat4.
 // GLSL m[col][row] maps to Float32Array[col*4 + row].
+
+function buildModelMatrix(pos: PosAtt): Float32Array {
+  const trig = makeTrigonomy(pos.a);
+  const right = vec3(0, 0, 0);
+  const up = vec3(0, 0, 0);
+  const forward = vec3(0, 0, 0);
+  rotFastLtoG(right, vec3(1, 0, 0), trig);
+  rotFastLtoG(up, vec3(0, 1, 0), trig);
+  rotFastLtoG(forward, vec3(0, 0, 1), trig);
+  return new Float32Array([
+    right.x, right.y, right.z, 0,
+    up.x, up.y, up.z, 0,
+    forward.x, forward.y, forward.z, 0,
+    pos.p.x, pos.p.y, pos.p.z, 1,
+  ]);
+}
 
 function buildViewProjMatrix(eye: PosAtt, prj: Projection): Float32Array {
   const viewMat = buildViewMatrix(eye);

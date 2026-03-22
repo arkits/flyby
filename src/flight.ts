@@ -2,7 +2,7 @@
 // Ported from FLYBY.C
 
 import type {
-  PosAtt, AppState, ManeuverState, GpuSrf, GpuField, ManeuverKey, Vec3, DebugPanelRefs, TelemetrySample,
+  PosAtt, AppState, ManeuverState, GpuSrf, GpuField, ManeuverKey, Vec3, DebugPanelRefs, TelemetrySample, MapVariant, WorldSnapshot,
 } from './types';
 import {
   vec3, subV3, rotLtoG, vectorToHeadPitch, pitchUp, sin16, cos16,
@@ -169,6 +169,17 @@ function requestShowRestart(state: AppState): void {
   state.restartRequested = true;
 }
 
+function updateMapVariant(mapVariant: MapVariant): void {
+  const params = new URLSearchParams(window.location.search);
+  if (mapVariant === 'airport-improved') {
+    params.delete('map');
+  } else {
+    params.set('map', mapVariant);
+  }
+  const query = params.toString();
+  window.location.search = query.length > 0 ? `?${query}` : '';
+}
+
 function clonePosAtt(posAtt: PosAtt): PosAtt {
   return {
     p: { ...posAtt.p },
@@ -199,6 +210,27 @@ function queueSeekToProgress(state: AppState, ratio: number): void {
   state.pendingSeekRatio = clamp01(ratio);
 }
 
+function findManeuverOptionIndex(key: ManeuverKey): number {
+  return MANEUVER_OPTIONS.findIndex((option) => option.key === key);
+}
+
+function cycleManeuverSelection(state: AppState, panel: DebugPanelRefs, direction: -1 | 1): void {
+  const fallbackKey = MANEUVER_OPTIONS[0]?.key ?? null;
+  const baseKey = state.runtime.forcedManeuver ?? state.currentManeuverKey ?? fallbackKey;
+  if (!baseKey) return;
+
+  const currentIndex = findManeuverOptionIndex(baseKey);
+  if (currentIndex < 0) return;
+
+  const nextIndex = (currentIndex + direction + MANEUVER_OPTIONS.length) % MANEUVER_OPTIONS.length;
+  const nextKey = MANEUVER_OPTIONS[nextIndex]?.key;
+  if (!nextKey) return;
+
+  state.runtime.forcedManeuver = nextKey;
+  panel.maneuverSelect.value = nextKey;
+  requestShowRestart(state);
+}
+
 function progressRatioFromPointer(panel: DebugPanelRefs, clientX: number): number {
   const bounds = panel.progressTrack.getBoundingClientRect();
   if (bounds.width <= 0) return 0;
@@ -214,6 +246,12 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   const maneuverOptions = MANEUVER_OPTIONS
     .map((option) => `<option value="${option.key}">${option.label}</option>`)
     .join('');
+  const mapOptions = `
+    <option value="airport">Airport</option>
+    <option value="airport-improved">Airport Improved</option>
+    <option value="airport-night">Airport Night</option>
+    <option value="downtown">Downtown</option>
+  `;
   const chartCards = TELEMETRY_CHARTS
     .map((chart) => `
       <div class="debug-console__chart-card">
@@ -245,6 +283,12 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
       <div class="debug-console__section-title">Sortie Director</div>
       <div class="debug-console__controls">
         <label class="debug-console__control">
+          <span>Map</span>
+          <select data-control="map">
+            ${mapOptions}
+          </select>
+        </label>
+        <label class="debug-console__control">
           <span>Aircraft</span>
           <select data-control="aircraft">
             <option value="random">Randomized pool</option>
@@ -271,11 +315,25 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
       <div class="debug-console__transport-row">
         <button
           type="button"
+          class="debug-console__transport-step"
+          data-control="previous-maneuver"
+          aria-label="Previous maneuver"
+          title="Previous maneuver"
+        >&lt;</button>
+        <button
+          type="button"
           class="debug-console__transport-toggle"
           data-control="pause"
           aria-label="Pause render"
           title="Pause render"
         ></button>
+        <button
+          type="button"
+          class="debug-console__transport-step"
+          data-control="next-maneuver"
+          aria-label="Next maneuver"
+          title="Next maneuver"
+        >&gt;</button>
         <div
           class="debug-console__progress"
           data-control="progress"
@@ -386,10 +444,13 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   `;
 
   const panel: DebugPanelRefs = {
+    mapSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="map"]'),
     aircraftSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="aircraft"]'),
     maneuverSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="maneuver"]'),
     randomizeButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="randomize"]'),
+    previousManeuverButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="previous-maneuver"]'),
     pauseButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="pause"]'),
+    nextManeuverButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="next-maneuver"]'),
     screenshotButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="screenshot"]'),
     cameraPanRange: queryElement<HTMLInputElement>(state.debugOverlay, '[data-control="camera-pan"]'),
     cameraTiltRange: queryElement<HTMLInputElement>(state.debugOverlay, '[data-control="camera-tilt"]'),
@@ -441,6 +502,7 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
     },
   };
 
+  panel.mapSelect.value = state.runtime.mapVariant;
   panel.aircraftSelect.value = state.runtime.forcedAircraftIndex === null
     ? 'random'
     : String(Math.max(0, Math.min(state.aircraftLabels.length - 1, Math.floor(state.runtime.forcedAircraftIndex))));
@@ -449,6 +511,9 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   panel.cameraTiltRange.value = cameraTiltDegrees(state).toFixed(0);
   panel.cameraZoomRange.value = state.cameraPan.zoom.toFixed(2);
 
+  panel.mapSelect.addEventListener('change', () => {
+    updateMapVariant(panel.mapSelect.value as MapVariant);
+  });
   panel.aircraftSelect.addEventListener('change', () => {
     state.runtime.forcedAircraftIndex = panel.aircraftSelect.value === 'random'
       ? null
@@ -470,6 +535,12 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   });
   panel.pauseButton.addEventListener('click', () => {
     togglePause(state);
+  });
+  panel.previousManeuverButton.addEventListener('click', () => {
+    cycleManeuverSelection(state, panel, -1);
+  });
+  panel.nextManeuverButton.addEventListener('click', () => {
+    cycleManeuverSelection(state, panel, 1);
   });
   panel.screenshotButton.addEventListener('click', () => {
     downloadFrame(state.canvas);
@@ -662,7 +733,7 @@ function updateDebugOverlay(state: AppState, dt: number): void {
   panel.values.smoke.textContent = `${state.smokeInst.nPth} / ${state.vaporInst.nPth}`;
   panel.values.time.textContent = `${state.currentTime.toFixed(2)} s`;
   panel.values.paused.textContent = state.paused ? 'yes' : 'no';
-  panel.values.runtime.textContent = `${state.renderDebug.seed} / ${state.renderDebug.scenario}`;
+  panel.values.runtime.textContent = `${state.renderDebug.seed} / ${state.renderDebug.scenario} / ${state.runtime.mapVariant}`;
   panel.values.heading.textContent = Math.round(latest.headingDeg).toString().padStart(3, '0');
   panel.values.pitch.textContent = `${fmtSigned(latest.pitchDeg)} deg`;
   panel.values.bank.textContent = `${fmtSigned(latest.bankDeg)} deg`;
@@ -1098,10 +1169,22 @@ function drawScreen(
     state.helpOverlay.classList.remove('is-visible');
   }
 
-  const vec = subV3(state.obj.p, state.eye.p);
-  vectorToHeadPitch(state.eye.a, vec);
-  state.eye.a.h += state.cameraPan.heading;
-  state.eye.a.p = clampCameraPitch(state.eye.a.p + state.cameraPan.pitch);
+  const renderEye: PosAtt = {
+    p: { ...state.eye.p },
+    a: { ...state.eye.a },
+  };
+  if (state.currentManeuver?.type === 'AHEAD') {
+    const maxAheadVerticalOffset = 28;
+    renderEye.p.y = Math.max(
+      state.obj.p.y - maxAheadVerticalOffset,
+      Math.min(state.obj.p.y + maxAheadVerticalOffset, renderEye.p.y),
+    );
+  }
+
+  const vec = subV3(state.obj.p, renderEye.p);
+  vectorToHeadPitch(renderEye.a, vec);
+  renderEye.a.h += state.cameraPan.heading;
+  renderEye.a.p = clampCameraPitch(renderEye.a.p + state.cameraPan.pitch);
   state.renderDebug.targetVecWorld = { ...vec };
 
   const cameraVec = vec3(0, 0, 0);
@@ -1109,12 +1192,12 @@ function drawScreen(
   prj.magx *= 2 * state.cameraPan.zoom;
   prj.magy *= 2 * state.cameraPan.zoom;
   convGtoL(cameraVec, state.obj.p, {
-    p: state.eye.p,
-    a: state.eye.a,
-    t: makeTrigonomy(state.eye.a),
+    p: renderEye.p,
+    a: renderEye.a,
+    t: makeTrigonomy(renderEye.a),
   });
   state.renderDebug.targetVecCamera = { ...cameraVec };
-  state.renderDebug.targetVecMatrix = debugViewTransform(state.obj.p, state.eye);
+  state.renderDebug.targetVecMatrix = debugViewTransform(state.obj.p, renderEye);
   state.renderDebug.projectionMag = prj.magx;
   if (cameraVec.z > prj.nearz) {
     const screen = { x: 0, y: 0 };
@@ -1133,9 +1216,9 @@ function drawScreen(
   for (const reference of CAPTURE_REFERENCE_POINTS) {
     const refCam = vec3(0, 0, 0);
     convGtoL(refCam, reference.point, {
-      p: state.eye.p,
-      a: state.eye.a,
-      t: makeTrigonomy(state.eye.a),
+      p: renderEye.p,
+      a: renderEye.a,
+      t: makeTrigonomy(renderEye.a),
     });
     if (refCam.z > prj.nearz) {
       const refScreen = { x: 0, y: 0 };
@@ -1167,33 +1250,38 @@ function drawScreen(
     : '-';
   state.renderDebug.referenceScreens = referenceScreens.join(' ');
 
-  const smokeVerts = drawSmoke(state.smokeClass, state.smokeInst, state.currentTime, state.eye);
-  const vaporVerts = drawSmoke(state.vaporClass, state.vaporInst, state.currentTime, state.eye);
+  const smokeVerts = drawSmoke(state.smokeClass, state.smokeInst, state.currentTime, renderEye);
+  const vaporVerts = drawSmoke(state.vaporClass, state.vaporInst, state.currentTime, renderEye);
 
-  renderer.render(
-    state.eye,
-    state.cameraPan.zoom,
-    state.field.sky,
-    state.field.gnd,
-    state.field,
-    state.gpuField,
-    state.aircraft[state.show.aircraft],
-    state.obj,
-    smokeVerts,
-    vaporVerts,
-  );
+  const snapshot: WorldSnapshot = {
+    camera: renderEye,
+    cameraZoom: state.cameraPan.zoom,
+    environment: state.environment,
+    gpuField: state.gpuField,
+    dynamicActors: [{
+      key: getAircraftLabel(state),
+      kind: 'aircraft',
+      gpuModel: state.gpuAircraft,
+      transform: state.obj,
+    }],
+    smokeGeometry: smokeVerts,
+    vaporGeometry: vaporVerts,
+  };
+
+  renderer.render(snapshot);
 
   (window as Window & {
     __flybyCapture?: unknown;
   }).__flybyCapture = {
     mode: state.config.mode,
+    map: state.runtime.mapVariant,
     seed: state.runtime.seed,
     scenario: state.runtime.scenario,
     aircraftIndex: state.show.aircraft,
     maneuver: state.currentManeuver?.type ?? null,
     smokeType: state.config.smokeType,
     object: { position: state.obj.p, attitude: state.obj.a },
-    eye: { position: state.eye.p, attitude: state.eye.a },
+    eye: { position: renderEye.p, attitude: renderEye.a },
     cameraTrim: {
       panDeg: cameraPanDegrees(state),
       tiltDeg: cameraTiltDegrees(state),

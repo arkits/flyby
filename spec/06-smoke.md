@@ -8,6 +8,16 @@ The smoke system tracks aircraft position over time, creating trail geometry beh
 Each trail segment is defined by two consecutive smoke nodes. Nodes store position, attitude,
 and derived left/up vectors for width expansion.
 
+## Audit Update (2026-03-22)
+
+- traversal order in `src/smoke.ts` matches the local checked-in
+  `FLYBY2/flyby2/ASMOKE.C`
+- the earlier documentation claim about a missing forward anti-tremble path was
+  not supported by the local `FLYBY2/` source tree and should not be treated as
+  an open parity task in this repository
+- the main smoke-related correctness issue today is in the renderer:
+  smoke and vapor draws alias the same GPU buffer before submission
+
 ## Smoke Types
 
 ### Ribbon Smoke (DEFAULT)
@@ -162,18 +172,24 @@ function insRibbonSmoke(
 
 ```typescript
 function getCurrentSmokeColor(att: SmokeAttr, rt: number): Color {
-  if (att.tc < rt) {
-    // Transition complete
-    return att.endc;
+  if (rt < att.tc) {
+    const ratio = rt / att.tc;
+    return {
+      r: att.inic.r + (att.endc.r - att.inic.r) * ratio,
+      g: att.inic.g + (att.endc.g - att.inic.g) * ratio,
+      b: att.inic.b + (att.endc.b - att.inic.b) * ratio,
+    };
   }
-  const ratio = rt / att.tc;
-  return {
-    r: att.inic.r + (att.endc.r - att.inic.r) * ratio,
-    g: att.inic.g + (att.endc.g - att.inic.g) * ratio,
-    b: att.inic.b + (att.endc.b - att.inic.b) * ratio,
-  };
+  return att.endc;
 }
 ```
+
+Current bundled behavior note:
+
+- all bundled smoke presets use white-to-white colors with `tc = 0`
+- that means smoke color interpolation is effectively dormant in the checked-in
+  runtime, so this edge-path difference is not affecting the current default
+  flyby modes
 
 ## Configuration (FLYBY.C:210-231)
 

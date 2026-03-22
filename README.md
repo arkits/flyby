@@ -12,6 +12,16 @@ and draw the field/terrain scene in the browser. Camera/framing and final
 rendering equivalence are still being validated against the original source and
 captured frames.
 
+The browser build now also includes non-parity sandbox modes on top of the
+original screensaver path:
+
+- `?app=freeflight` for a controllable third-person aircraft sandbox
+- `?app=drive` for a controllable third-person car sandbox
+
+These new modes are browser-only adaptations intended to turn the port into a
+vehicle-sim foundation. The original parity work remains under the default
+`scriptedFlyby` path.
+
 See [`spec/validation-report.md`](./spec/validation-report.md) for the current
 parity status and [`spec/10-implementation-plan.md`](./spec/10-implementation-plan.md)
 for the remaining work.
@@ -28,6 +38,10 @@ bun install
 bun run dev
 bun run build
 bun run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png
+
+# browser-only sandbox modes
+# http://127.0.0.1:4180/?app=freeflight
+# http://127.0.0.1:4180/?app=drive
 ```
 
 ## Deploy To Vercel

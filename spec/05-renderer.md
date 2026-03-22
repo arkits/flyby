@@ -2,6 +2,36 @@
 
 Rewrite of `win32ogl/iopengl.c` (OpenGL 1.x backend) for WebGPU.
 
+## Audit Update (2026-03-22)
+
+The current implementation has moved well beyond the early renderer design
+sketched below. In the checked-out tree, the renderer now includes:
+
+- procedural sky shading
+- environment-driven fog and hemisphere lighting
+- a camera-centered support ground pass
+- projected structure shadow geometry
+- separate overlay / line / point passes for field PC2 content
+- dedicated smoke-lit and smoke-line pipelines
+- guarded field traversal that skips malformed transform nodes with a warning
+  instead of hard-crashing buffer assembly
+
+Current implementation risks:
+
+- full field geometry is still rebuilt on the CPU every frame
+- aircraft geometry is still rebuilt in world space every frame
+- identical uniforms are rewritten repeatedly during the same frame
+- smoke and vapor reuse the same `GPUBuffer` inside one command buffer, which
+  is a real correctness hazard
+
+Parity note:
+
+- the browser environment stack is now an adaptation track, not a strict port
+  of the original `BiDrawGroundSky` + eye-relative light behavior
+- the default `airport` variant should not be treated as a parity baseline
+- field-buffer startup failures are now wrapped and surfaced for browser fault
+  UI instead of falling through as raw exceptions
+
 ## Initialization
 
 ```typescript
@@ -164,6 +194,14 @@ Following the original `DrawScreen` (FLYBY.C:452-553) order:
    - 2D overlay text "PRESS X-KEY TO EXIT"
    - Render with canvas 2D overlay or simple textured quad
 ```
+
+Current implementation note:
+
+- the actual browser path now replaces the original split ground/sky fill with
+  a procedural sky pass plus a camera-relative support ground pass
+- field shadows are an added browser feature
+- the high-level draw ordering still follows the original overlay-before-scene
+  separation from `ifield.c`
 
 ## SRF Model GPU Buffer
 

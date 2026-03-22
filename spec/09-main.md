@@ -2,6 +2,30 @@
 
 Ported from `FLYBY.C` `main()` (lines 47-82) and `FlyByMain()` (lines 202-264).
 
+## Audit Update (2026-03-22)
+
+The current entry/runtime layer now does more than the original bootstrap:
+
+- query parameters choose mode, map variant, seed, scenario, maneuver, and
+  smoke type
+- field loading is routed through map enhancement and environment resolution
+- bootstrap now mounts an in-scene fault overlay for startup and runtime
+  renderer failures instead of falling through to a black viewport
+- the browser exposes four map variants:
+  - `airport`
+  - `airport-improved`
+  - `airport-night`
+  - `downtown`
+
+Current caveats:
+
+- the default `airport` path is already enhanced and therefore is not a raw
+  parity mode
+- aircraft GPU buffers are prebuilt at load time, but the current renderer path
+  still does not consume them during rendering
+- the fault overlay is browser-only UX and not part of original `FLYBY.C`
+  behavior
+
 ## Entry Flow
 
 ```typescript

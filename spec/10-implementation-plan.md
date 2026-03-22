@@ -1,292 +1,209 @@
-# Implementation Plan — Finish the Original FLYBY2 Port in WebGPU
+# Implementation Plan — Parity Track and Browser-Max Track
 
 ## Goal
 
-Close the remaining behavior gap between the original Windows screensaver and
-the current WebGPU reimplementation. The focus is strict source parity first,
-browser polish second.
+Finish the port in two explicit tracks:
 
----
+1. a source-auditable parity tier
+2. a browser showcase tier that deliberately goes beyond the original
+
+The current tree already builds and renders, so the next work should focus on
+restoring an honest baseline and removing the biggest runtime bottlenecks before
+leaning further into graphics spectacle.
+
+The codebase now also carries an explicit browser-only vehicle-sim foundation
+layer:
+
+- `scriptedFlyby` keeps the original screensaver-oriented runtime
+- `freeFlight` adds a controllable aircraft sandbox
+- `drive` adds a controllable car sandbox
+
+These modes are adaptation work, not parity claims. They exist to let the port
+grow into a browser simulation core while the default path remains accountable
+to `FLYBY2`.
 
 ## Current Assessment
 
-### Already Good Enough to Build On
+### Healthy Foundations
 
-- application shell and asset loading
-- SRF parsing and aircraft rendering
-- original aircraft inventory
-- six maneuver scripts
-- smoke data model
-- FLD / TER / full standard PC2 parsing
-- browser `X` quit / help prompt flow
-- field runtime helper layer for region/elevation/object queries
+- maneuver scripts are still close to `FLYBY.C`
+- parsers for SRF, FLD, PC2, and TER are in good shape
+- recursive field traversal and runtime helpers are present
+- the browser environment stack is coherent enough to support multiple map
+  variants today
+- the renderer now uploads static field geometry once instead of rebuilding it
+  every frame
+- gameplay modes now use a fixed-step vehicle/camera/input runtime separate
+  from the scripted screensaver loop
 
-### Main Remaining Gaps
+### Immediate Problems
 
-1. Camera and projection are not yet proven equivalent to the original engine.
-2. Ground / sky backdrop still needs visual validation against the original.
-3. Final visual validation is still needed for the restored `PC2` vs `PLT` split.
-4. Terrain still needs runtime visual validation against the original.
-5. Camera and final framing are still the main blockers.
-6. PC2 point/line primitives still use browser/WebGPU approximations rather
-   than the original raster path.
+- the renderer is CPU-bound because it rebuilds most geometry every frame
+- live browser recapture is still needed after the dynamic-actor uniform fix
+- low-FPS cadence still differs from the original draw-per-step flow
 
----
+## Phase 0: Restore an Honest Baseline
 
-## Priority Order
-
-### Phase 1: Lock Camera / Projection Parity
-
-**Why first:** Every visual comparison is suspect until the camera model is
-correct.
+**Why first:** Raw parity is available again, so the remaining work can focus on
+locking it down and keeping the showcase variants separate.
 
 **Tasks**
 
-- Add deterministic debug capture for:
-  - aircraft position / attitude
-  - eye position / attitude
-  - projected runway reference points
-- Reconcile the WebGPU view matrix with original `BiVectorToHeadPitch` and
-  the `DrawScreen()` projection flow.
-- Verify the original 2x magnification behavior from `FLYBY.C`.
-- Produce comparison screenshots for:
-  - straight pass
+- Make `airport-improved`, `airport-night`, and `downtown` explicitly opt-in.
+- Add deterministic capture URLs that always target the raw parity tier.
+- Keep a raw lighting mode that uses field sky/ground and the original
+  eye-relative light intent as closely as the browser path allows.
+
+**Done when**
+
+- one runtime mode matches the original asset set as closely as possible
+- browser-only variants remain available but are clearly separate
+- screensaver mode inventory is source-faithful
+
+## Phase 1: Close the Remaining Behavior Gaps
+
+**Why second:** Once the baseline is honest, the remaining differences can be
+measured instead of guessed.
+
+**Tasks**
+
+- Validate camera framing against representative original passes:
+  - straight
   - roll
   - loop
-
-**Validation command**
-
-- `npm run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png`
-
-**Progress on 2026-03-22**
-
-- Re-audited `FLYBY.C`, `i3dg.c`, `icalc.c`, `ifield.c`, and `i2dpict.c`
-- Restored original `BiGetStdProjection` magnification and far-plane values
-- Reapplied FLYBY's extra 2x magnification in the browser render path
-- Switched the renderer to a positive-Z-forward camera/view/projection path to
-  match Blue Impulse engine space directly
-- Extended the debug HUD with deterministic object-in-world, object-in-camera,
-  and projected screen-position diagnostics
-- Reworked the browser debug HUD into an aeronautics-style control panel with
-  aircraft/maneuver selectors, a randomize button, maneuver progress, and live
-  telemetry visualizations for validation sessions
-- Added browser-only debug camera trim controls for pan, tilt, and zoom so
-  representative capture framing can be inspected without changing the
-  underlying simulation camera logic
-- Replaced SRF/PC2 triangle-fan tessellation with cached polygon triangulation
-  so concave source faces no longer explode into stray panels on some aircraft
+  - low runway pass
+- Reconcile low-FPS draw cadence with the original `PassedTime()` behavior.
+- Re-check `PC2` overlay vs `PLT` insertion ordering with raw airport captures.
+- Validate terrain side walls, diagonals, and placement against `iterrain.c`.
+- Decide whether smoke color transition semantics should follow the literal
+  checked-in `ASMOKE.C` branch or stay as the safer browser interpretation.
+- Tighten SRF collision semantics beyond bounding-box overlap if parity work
+  requires it.
 
 **Done when**
 
-- framing is stable across repeated runs
-- runway and terrain appear in the correct screen-space position
-- the scene no longer looks flipped, skewed, or vertically misplaced
+- parity claims are based on raw captures, not augmented scenes
+- camera, terrain, smoke, and draw ordering are source-audited
 
-**Current status**
+## Phase 2: Remove the Biggest CPU Bottlenecks
 
-Phase 1 is no longer blocked on unknown camera math. The remaining work is
-runtime comparison and any follow-up corrections needed after validating field,
-terrain, and runway composition against the original.
-
-**Next step**
-
-Lock representative camera shots for straight, roll, loop, and runway-adjacent
-passes, then tune any remaining eye-distance / framing differences before
-declaring the scene composition finished.
-
----
-
-### Phase 2: Restore Original Scene Draw Order
-
-**Why second:** The original flyby depends on the airport composition as much
-as the aircraft.
+**Why third:** The current renderer is leaving a lot of performance on the CPU
+and paying for work it already knows how to avoid.
 
 **Tasks**
 
-- Split field rendering back into the original conceptual passes:
-  - ground / sky backdrop
-  - `PC2` field-map overlays
-  - grid
-  - `SRF` / `TER` / `PLT` scene objects
-  - aircraft
-  - smoke
-- Apply the original `PC2` overmap pitch adjustment for field overlays.
-- Keep `PLT` on the inserted scene-object path rather than the overmap path.
-- Re-validate recursive `FLD` composition once the draw order is fixed.
-
-**Status**
-
-- structural split implemented
-- original overmap pitch restored
-- overlay pass moved ahead of inserted scene objects
-- full-scene world ground slab removed, but a smaller near-field support plane
-  remains as a browser readability adaptation
-- visual parity still needs validation
+- Stop rebuilding static field geometry every frame.
+- Keep aircraft meshes in model space and draw them with model matrices or
+  instances instead of CPU-regenerating world-space vertices.
+- Keep dynamic smoke / vapor uploads on distinct GPU buffers and continue
+  reducing per-frame buffer churn.
+- Reuse typed arrays or staging arenas for dynamic geometry.
+- Add viewport / bounding-box rejection before tessellating off-screen SRF and
+  terrain content.
+- Collapse redundant per-frame uniform uploads.
+- Reduce per-frame debug HUD DOM churn during normal playback.
 
 **Done when**
 
-- runway overlays and signal boards occupy the same layers as the original
-- scene composition matches the original airport layout
+- static field uploads happen at load time or on coarse visibility changes
+- aircraft rendering uses the prebuilt GPU buffers already created at startup
+- frame time is dominated by real rendering work instead of CPU mesh rebuilds
 
----
+## Phase 3: Lock the Parity Tier
 
-### Phase 3: Fix Terrain Semantics
-
-**Why third:** Terrain is present now, but correctness is not yet trustworthy.
+**Why fourth:** Before pushing graphics hard, we need a browser tier that still
+looks recognizably like the original screensaver.
 
 **Tasks**
 
-- Align terrain side-wall color ordering with original `BOT`, `RIG`, `LEF`,
-  `TOP` semantics.
-- Verify side-wall normals and winding against `iterrain.c`.
-- Validate triangle diagonal choice and visibility against the original mesh.
-- Compare terrain silhouette and wall colors against the original airport.
-
-**Status**
-
-- side-wall color index mapping corrected
-- visual comparison still pending
+- Keep a source-faithful visual preset with:
+  - raw airport composition
+  - field-driven sky / ground colors
+  - restrained smoke opacity
+  - no browser-only scene augmentation
+- Document every browser adaptation separately from this tier.
+- Capture parity reference frames and keep them stable as regression targets.
 
 **Done when**
 
-- side walls use the correct color for each edge
-- terrain does not float, invert, or cover the runway incorrectly
+- the repo has a defendable parity tier
+- later rendering work can be compared against that tier instead of replacing it
 
----
+## Phase 4: Strengthen the Browser Showcase Tier
 
-### Phase 4: Complete the PC2 Port
-
-**Why fourth:** The default assets load, but the original PC2 feature set is
-still larger than the current browser subset.
+**Why fifth:** Once the parity tier is protected, the browser path can be
+allowed to look better on purpose.
 
 **Tasks**
 
-- Audit `i2dpict.c` object types required for full compatibility.
-- Extend parser/runtime support beyond polygon-only PC2 files.
-- Preserve original visibility and depth behavior for PC2 insertion.
-- Confirm the default bundled PC2 assets still render identically after the
-  parser/runtime expansion.
-
-**Status**
-
-- parser/runtime now supports `PST`, `PLL`, `LSQ`, and `PLG`
-- per-object `DST` visibility distance handling is implemented
-- center-based PC2 visibility checks are implemented
-- exact raster equivalence for line/point primitives still needs validation
-
-**Done when**
-
-- PC2 support is no longer limited to polygon blocks
-- browser runtime behavior matches original PC2 rendering assumptions
-- point and line primitives are visually acceptable against the original
-
----
-
-### Phase 5: Port Field Runtime Semantics
-
-**Why fifth:** Field parity is more than drawing objects.
-
-**Tasks**
-
-- Implement `RGN` runtime behavior or explicitly scope it out.
-- Port field helpers needed for:
-  - region lookup
-  - elevation queries
-  - collision-style field queries used by original field semantics
-- Document which original field APIs are fully ported versus intentionally not
-  exposed in the browser build.
-
-**Status**
-
-- recursive `RGN` lookup is now implemented and exposed to runtime diagnostics
-- recursive terrain elevation lookup is now implemented and exposed to runtime diagnostics
-- terrain eye/up vector query path is implemented
-- exact collision semantics still need validation
+- Keep the environment-driven shader path in the browser-only track:
+  - procedural sky gradients and cloud bands
+  - fog / haze
+  - hemisphere lighting
+  - directional key light control
+  - emissive runway / apron / city accents
+- Maintain dedicated sky and support-ground passes.
+- Keep `airport-improved` as the richest airport showcase variant.
+- Add higher-quality contact shadows for large structures.
+- Add procedural runway and terrain material breakup that scales with quality.
+- Introduce quality tiers so parity mode stays cheap on integrated GPUs while
+  richer variants can stretch on faster hardware.
 
 **Done when**
 
-- `RGN` is not parse-only dead data
-- field behavior can be described accurately and defensibly
+- enhanced rendering is coherent, optional, and performant
+- the parity tier still exists and still tells the truth
 
----
+## Phase 5: Browser-Max Graphics Track
 
-### Phase 6: Tighten Simulation and Smoke Fidelity
+This is the deliberate “push the browser hard” track. It should start only
+after Phases 0-3 are stable.
 
-**Why sixth:** The current motion is close, but parity requires the remaining
-small timing differences to be resolved.
+### Visual Ambition
 
-**Tasks**
+- volumetric-looking cloud layers in the sky pass
+- runway, apron, and city-light bloom in night scenes
+- temporal AA or SMAA-style edge cleanup
+- half-resolution atmospheric scattering / haze resolve
+- denser smoke shading with soft self-shadowing approximation
+- richer terrain detail and runway material response at close range
 
-- Reconcile `PassedTime()` behavior with the original minimum timestep logic.
-- Verify smoke append ordering, especially during turns.
-- Validate all smoke modes:
-  - ribbon
-  - wire
-  - trail
-  - solid
-- Test `flyby.inf` smoke mode variants manually in browser.
+### GPU Ambition
 
-**Status**
+- GPU instancing for repeated airport props, markers, and city lights
+- compact visible-object lists or indirect draws for larger scenes
+- compute-assisted smoke ribbon generation if browser support is good enough
+- dynamic resolution or multi-resolution rendering for expensive scenes
+- optional shadow atlases or cascaded shadows for showcase variants
 
-- redraw cadence is now tied to simulation advances rather than every
-  high-refresh `requestAnimationFrame` tick
-- remaining work is slow-frame validation and smoke-density comparison
+### Scene Ambition
 
-**Done when**
+- larger city / downtown fields driven by the same runtime
+- richer night-light passes and window grids
+- optional weather presets built on the environment system
+- high-end replay / capture presets for deterministic showcase renders
 
-- timing no longer drifts on high-refresh displays
-- smoke density and growth match original intent closely
+**Guardrail**
 
----
+Every item in this phase must remain clearly labeled as browser enhancement, not
+backfilled into parity claims.
 
-### Phase 7: Restore Original Interaction Contract
+## Verification Loop
 
-**Why seventh:** This is lower priority than graphics parity, but still part of
-original behavior.
+After each non-trivial phase:
 
-**Tasks**
+1. Run `bun run build`.
+2. Run `bun run dev`.
+3. Capture deterministic frames with `bun run capture:parity -- <url> <png>`.
+4. Update `spec/validation-report.md` with the actual result.
 
-- Reintroduce `X` to stop the animation loop cleanly.
-- Reintroduce help prompt behavior for non-special keys.
-- Keep `T` as a browser-native capture path, but document it as an adaptation.
+## Immediate Next Steps
 
-**Status**
+1. Add a raw no-augmentation airport mode for honest parity capture.
+2. Re-run deterministic runway / signal / loop captures after the renderer
+   uniform-slot fix.
+3. Move aircraft and static field geometry out of the per-frame rebuild path.
+4. Add earlier viewport/bounding-box rejection before CPU tessellation.
 
-- implemented
-- only documentation/validation remains
-
-**Done when**
-
-- browser controls preserve the original screensaver flow where practical
-- intentional deviations are explicit rather than accidental
-
----
-
-### Phase 8: Final Parity Audit
-
-**Tasks**
-
-- Re-audit against:
-  - `FLYBY2/flyby2/FLYBY.C`
-  - `FLYBY2/flyby2/ASMOKE.C`
-  - `FLYBY2/impulse/src/ifield.c`
-  - `FLYBY2/impulse/src/iterrain.c`
-  - `FLYBY2/impulse/src/i2dpict.c`
-- Update spec docs with:
-  - fully ported behavior
-  - intentionally adapted browser behavior
-  - any explicitly out-of-scope engine features
-
-**Done when**
-
-- the spec can truthfully say the port is complete
-
----
-
-## Immediate Next Step
-
-The next concrete implementation step should be:
-
-**Validate the corrected camera/projection path against the original with
-repeatable screenshots, then split `PC2` overmap rendering from `PLT` scene
-insertion so airport composition can be compared with confidence.**
+Those four steps unlock both trustworthy parity work and the browser-max
+rendering path you want.

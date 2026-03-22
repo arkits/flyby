@@ -2,372 +2,255 @@
 
 ## Overview
 
-This report compares the current Vite/WebGPU implementation against the
-original Windows screensaver in `FLYBY2/flyby2/FLYBY.C` and the original engine
-subsystems in `FLYBY2/impulse/src/`.
+This report reflects the current checked-out tree in `/Users/archit/Dev/flyby`
+as audited on 2026-03-22 against:
 
-**Validation Date:** 2026-03-22
-**Status:** Partial port, not at parity
-**Build Status:** `npm run build` passes
-**Capture Path:** `npm run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png`
+- `FLYBY2/flyby2/FLYBY.C`
+- `FLYBY2/flyby2/ASMOKE.C`
+- `FLYBY2/impulse/src/ifield.c`
+- `FLYBY2/impulse/src/i2dpict.c`
+- `FLYBY2/impulse/src/iterrain.c`
+- `FLYBY2/impulse/src/i3dg.c`
 
-The previous docs overstated completion. The current codebase has the core port
-structure in place, but several original rendering and behavior paths are still
-missing or diverge from the screensaver.
+Verification performed in this audit:
 
----
+- `bun run build`
+
+Browser recapture is still pending after the latest renderer correctness fixes.
+The expected capture commands are:
+
+- `bun run capture:parity -- 'http://127.0.0.1:4173/?seed=1&scenario=runway&map=airport' /tmp/flyby-airport.png`
+- `bun run capture:parity -- 'http://127.0.0.1:4173/?seed=1&scenario=runway&map=airport-improved' /tmp/flyby-airport-improved.png`
 
 ## Executive Summary
 
-### Strongly Ported
+### Strongest Areas
 
-- `flyby.inf` loading, including all 22 original aircraft entries
-- SRF loading and aircraft rendering path
-- The six original maneuver scripts
-- Forward speed and main pitch / bank / turn constants
-- Smoke class / instance data model
-- FLD, TER, and standard PC2 object parsing
-- Recursive field loading and `LOD`-based scene traversal
-- Original `X` quit / help prompt behavior is now restored in browser form
-- Live render now shows aircraft, runway, terrain, and field objects again
-- Field runtime region, elevation, object lookup, and SRF collision helpers now exist
+- the six maneuver programs still mirror `FLYBY.C`
+- SRF, FLD, PC2, and TER parsing are structurally close to the original code
+- recursive field traversal, `LOD` checks, terrain elevation, region lookup,
+  and coarse SRF collision helpers are in place
+- PC2 overlay vs PLT inserted-scene separation now matches `ifield.c`
+- smoke traversal order in `src/smoke.ts` matches the local `ASMOKE.C`
+- static field geometry is now uploaded once and reused across frames
+- browser-only `freeFlight` and `drive` modes now sit on a separate fixed-step
+  runtime instead of mutating the scripted flyby loop
 
-### Not Yet at Original Behavior
+### Current Blockers
 
-- Camera, view matrix, and projection still need source-level validation
-- Ground / sky rendering still needs visual validation against the original backdrop path
-- Terrain wall color handling was corrected, but still needs visual validation
-- Camera and final framing still need visual validation after the renderer changes
+- low-FPS cadence still differs from the original draw-per-step flow
+- the new browser vehicle modes are useful foundations, but they are adaptation
+  work and should not be mistaken for parity evidence
+
+### Browser Runtime Note
+
+- bootstrap/runtime failures now surface through an in-app fault overlay with
+  diagnostics and reload actions, which is useful browser adaptation work but
+  not part of the original executable's behavior
 
 ### Bottom Line
 
-This is a credible reimplementation foundation, but it is not yet a complete
-port of the original screensaver's functionality and behavior.
+The code compiles and the raw-airport path is restored in source, but parity
+still cannot be signed off yet. The next milestone is rerunning honest raw
+captures and removing the biggest runtime bottlenecks, not adding more visual
+flourish to the current default mode.
 
----
+## Build Audit
 
-## Original Asset Audit
+`bun run build` passes on the current tree.
 
-### Aircraft Availability
+That confirms the environment/shader refactor is integrated, but it does not
+resolve the main open questions:
 
-`public/data/flyby.inf` matches the original `FLYBY2/flyby2/FLYBY.INF`, and all
-22 referenced aircraft files exist in `public/data/`:
+- the browser lighting/sky path is still an adaptation, not a parity tier
+- the largest remaining risks are runtime correctness and raw-vs-enhanced mode separation
 
-- `a6.srf`
-- `angels.srf`
-- `av8b.srf`
-- `ea6b.srf`
-- `f1.srf`
-- `f117a.srf`
-- `f14sprd.srf`
-- `f14swbk.srf`
-- `f15.srf`
-- `f16.srf`
-- `f18.srf`
-- `f86blue.srf`
-- `mig21.srf`
-- `mig23spd.srf`
-- `mig23wbk.srf`
-- `mrg2000.srf`
-- `su27.srf`
-- `t2blue.srf`
-- `t400.srf`
-- `t4blue.srf`
-- `thunder.srf`
-- `viggen.srf`
+## Browser Sandbox Modes
 
-This part of the port is complete from an asset-availability perspective.
+The checked-out tree now includes two browser-only gameplay modes:
 
-### Airport Scene Availability
+- `?app=freeflight`
+- `?app=drive`
 
-The bundled field data required by the original default experience is present:
+These share the asset loaders, renderer, and field runtime helpers, but they
+run on a separate fixed-step simulation/camera/input stack. They are useful for
+turning the port into a vehicle-sim foundation; they are not part of the
+original screensaver contract.
 
-- `airport.fld`
-- `runway.pc2`
-- `signal.pc2`
-- `sample.ter`
-- `hanger.srf`
-- `tower.srf`
+## Runtime Capture Notes
 
-The parity risk is therefore in runtime behavior, not missing source assets.
+Source audit confirms two important scene-state facts, and fresh browser
+captures should now be rerun to verify them in the live app:
 
----
+- `?map=airport` currently reports `Field loaded: 4 SRF, 2 PC2, 1 TER`
+- `?map=airport-improved` currently reports `Field loaded: 22 SRF, 3 PC2, 1 TER`
+
+By contrast, the checked-in `public/data/airport.fld` text asset contains only:
+
+- 4 `SRF`
+- 2 `PC2`
+- 2 `PLT`
+- 1 `TER`
+
+The raw default airport now matches the checked-in `airport.fld` asset counts,
+while `airport-improved` remains the explicit browser-enhanced variant.
 
 ## Parity Matrix
 
 | Area | Original | Current Port | Status |
 |------|----------|--------------|--------|
-| `flyby.inf` script loading | Field, altitude, smoke mode, aircraft list | Ported | Good |
-| Aircraft inventory | 22 selectable aircraft | Ported and available | Good |
-| Maneuver set | Straight, Roll, Loop, Climb, Eight, 360 | Ported | Good |
-| Motion constants | ~100 units/sec, original attitude update rates | Ported more closely, with 0.02s minimum timestep restored | Needs runtime validation |
-| Camera spawn | Random offset around aircraft | Ported | Needs visual validation |
-| Camera look-at | Aircraft-centered each frame | Ported | Needs visual validation |
-| Projection setup | Original Blue Impulse camera space | Reimplemented, scene now renders correctly but equivalence is still unproven | Partial parity |
-| Default smoke config | Engine default `SOLIDSMOKE`, bundled `flyby.inf` selects `RIBBONSMOKE` | Ported | Good |
-| Smoke geometry types | Ribbon / Wire / Trail / Solid | Implemented | Needs end-to-end validation |
-| Field parsing | `SRF`, `TER`, `PC2`, `PLT`, `RGN`, `FLD`, `LOD` | Ported structurally and backed by runtime helpers | Partial parity |
-| Recursive `FLD` transforms | Nested field composition | Ported | Needs validation |
-| `LOD` behavior | Distance culling in field traversal | Ported | Needs validation |
-| Terrain mesh | Block triangles + side walls | Ported and now visibly present | Partial parity |
-| PC2 format | Standard object types from `i2dpict.c` | Ported with thin-geometry approximations for line/point primitives | Partial parity |
-| `PC2` vs `PLT` runtime behavior | Separate draw paths | Split into separate overlay vs scene paths | Partial parity |
-| Region metadata (`RGN`) | Queryable at runtime | Recursive runtime query implemented | Partial parity |
-| Screensaver exit/help UX | `X` exits, other keys show help | Restored with browser overlay text | Adapted parity |
-| Render capture (`T`) | TIFF output | Browser PNG download | Browser adaptation |
-
----
+| `flyby.inf` loading | field, smoke mode, altitude, aircraft list | Ported | Good |
+| Maneuver scripts | straight, roll, loop, climb, eight, 360 | Ported structurally | Good |
+| Motion constants | `100 units/sec`, original pitch/bank/turn rates | Ported | Needs runtime validation |
+| Camera look-at | `BiVectorToHeadPitch` every frame | Ported | Needs visual validation |
+| Fixed-step pacing | `PassedTime()` waits for at least `0.02s` and each accepted step is drawn | Browser fixed-step accumulator exists, but batched stepping still coalesces draws | Partial parity |
+| SRF parser | vertices, faces, normals, twist, bbox | Ported | Good |
+| FLD parser | `SRF`, `TER`, `PC2`, `PLT`, `RGN`, `FLD`, `LOD` | Ported | Good |
+| PC2 parser | `PST`, `PLL`, `LSQ`, `PLG`, `DST` | Ported | Good |
+| Terrain parser | block mesh + side walls | Ported | Good |
+| Recursive field traversal | nested `FLD` composition | Ported | Good |
+| `PC2` vs `PLT` draw path | overlay vs inserted scene object | Ported | Good |
+| Field runtime helpers | region, elevation, SRF collision | Implemented | Partial parity |
+| Smoke class / instance model | Aurora-style data layout | Ported | Good |
+| Smoke traversal order | backward stepping over tips in `ASMOKE.C` | Matches local source | Good |
+| Smoke color transition edge path | literal `ASMOKE.C` branch semantics | Current code uses a safer browser interpretation | Unvalidated edge case |
+| Raw default airport | original `AIRPORT.FLD` layout and colors | Default browser airport now uses raw asset counts | Partial parity |
+| Default lighting / ground-sky | field colors + split horizon + eye-relative light | Environment descriptor, procedural sky, fog, and directional light | Browser adaptation |
+| `flyby2_s` aircraft inventory | `FLYBY2_S.INF` list | Source list now matches original 22-aircraft bundle | Good |
+| Browser build | should compile cleanly | Verified with `bun run build` | Good |
 
 ## Source-Audited Findings
 
-### 1. Flight Script Coverage Is Largely Correct
+### 1. Dynamic Draw Uniforms and Smoke/Vapor Buffer Ownership Are Now Safe on Paper
 
-`src/flight.ts` preserves the original six maneuver scripts and uses the same
-high-level sequencing as `FLYBY.C`:
+The renderer now assigns each draw its own aligned uniform-buffer slot instead
+of rewriting one shared uniform block throughout the frame, and smoke lines /
+vapor lines no longer alias the same dynamic vertex buffer before submission.
 
-- Straight
-- Roll
-- Loop
-- Climb
-- Eight
-- 360
+That removes two source-audited render-correctness hazards from the current
+tree. Live browser recapture is still required to confirm the aircraft framing
+is visually restored in practice.
 
-The core forward progression and attitude changes are close to the original.
-This is the strongest parity area in the current codebase.
+### 2. Static Scene Rendering Is Still CPU-Rebuilt Every Frame
 
-### 2. Time Stepping Now Tracks the Original Cadence More Closely
+`src/renderer.ts` currently rebuilds:
 
-The original `PassedTime()` waits until at least `0.02` seconds have elapsed
-before advancing simulation time. The browser port now uses a minimum `0.02`
-simulation step, caps elapsed frame time at `0.1`, and only redraws when at
-least one simulation step is due instead of presenting every high-refresh RAF
-tick.
+- full field scene geometry
+- aircraft world-space geometry
+- camera-centered ground support geometry
+- smoke and vapor upload arrays
 
-Impact:
+on every render step.
 
-- maneuver timing is less sensitive to 120 Hz style redraw rates
-- on-screen pacing like help-text lifetime is closer to simulation cadence
-- smoke density and slow-frame behavior still need browser-side visual
-  validation
+This leaves the browser path heavily CPU-bound and creates avoidable
+`Float32Array` churn on the hottest path.
 
-### 3. Camera / Projection Was Source-Audited and Corrected at the Math Layer
+### 3. The Code Already Pays for Prebuilt Aircraft GPU Buffers, but Does Not Use Them
 
-The original screensaver computes a random eye position, then reorients the
-camera every frame with `BiVectorToHeadPitch`, and renders using the engine's
-standard projection with an extra 2x magnification applied in `DrawScreen()`.
+`src/main.ts` still prebuilds `GpuSrf` buffers for every aircraft at load time,
+and `state.gpuAircraft` is still tracked, but the renderer path consumes the
+CPU model and rebuilds transformed aircraft vertices per frame instead.
 
-The browser port now matches several source-level facts that were previously
-wrong in the renderer:
+This means startup cost is paid up front without getting the intended runtime
+benefit.
 
-- `getStdProjection()` now uses the original Blue Impulse default
-  magnification and far plane values
-- the WebGPU render path now reapplies the extra 2x projection magnification
-  that `FLYBY.C` performs in `DrawScreen()`
-- the camera path now preserves the original engine's positive-Z-forward camera
-  space instead of forcing a conventional RH camera-space `z` flip
-- the projection matrix is now left-handed to match that camera space
+### 4. The Default Airport Raw Path Is Restored
 
-This removes the biggest known camera/render-space mismatch. Visual parity is
-still not fully signed off, but the framing is now based on audited engine
-assumptions rather than inferred WebGPU conventions.
+`enhanceFieldForMap(...)` now leaves the default `airport` variant
+source-faithful and reserves browser-only scene augmentation for
+`airport-improved` and `airport-night`.
 
-### 4. Ground / Sky Rendering Now Follows the Original Approach
+That restores an honest raw capture path without removing the showcase variants.
 
-The original `DrawScreen()` path uses the field's actual ground and sky colors
-via `BiGetFieldGroundSky()` and `BiDrawGroundSky()`.
+### 5. The Browser Visual Stack Is Now an Explicit Adaptation Track
 
-The current renderer builds a screen-space ground/sky split from eye pitch and
-bank using the same horizon-line approach as `BiDrawGroundSky()`.
+The current renderer uses a browser-only environment descriptor for:
 
-For browser readability, it also keeps a smaller near-field ground support
-plane under the airport scene. This is an adaptation rather than a claim of
-exact engine equivalence, but it avoids the airport falling back to an all-sky
-floor when the backdrop split alone is insufficient in WebGPU.
+- procedural sky
+- directional key light
+- hemisphere ambient
+- fog / haze
+- camera-relative ground ring
+- emissive runway and city accents
 
-Impact:
+This is coherent showcase work, but it is no longer the original ground/sky +
+camera-relative light behavior from `FLYBY.C` / `i3dg.c`.
 
-- the previous full-scene fake-ground slab is gone
-- a smaller near-field support plane remains as an explicit browser adaptation
-- final visual equivalence of the backdrop split still needs runtime validation
+### 6. `flyby2_s` Inventory Now Matches `FLYBY2_S.INF`
 
-### 5. `PC2` and `PLT` Are Partially Restored
+The hardcoded list in `src/main.ts` now matches the 22 aircraft entries listed
+in `FLYBY2/flyby2_s/FLYBY2_S.INF`.
 
-The original field runtime treats these differently:
+That removes a source-audited inventory mismatch and prevents non-aircraft
+assets from being randomized as flyby subjects.
 
-- `PC2` objects are drawn by `BiOvwFld()` as overlaid field maps
-- those `PC2` objects are explicitly pitched by `-16384` before drawing
-- `PLT` objects are inserted later by `BiInsFld()` with scene geometry
+### 7. Low-FPS Animation Still Differs from the Original Draw Cadence
 
-The current WebGPU renderer now separates these paths again:
+The original maneuver loops call `DrawScreen`, then wait for one accepted
+`PassedTime()` slice, then advance simulation.
 
-- `PC2` field maps use an overlay path with the original `-16384` pitch
-  adjustment applied before composition
-- `PLT` objects go through the scene insertion path
+The browser loop accumulates elapsed time and, once enough time has built up,
+draws once and then advances as many fixed steps as needed. Under load, that
+coalesces multiple simulation advances behind a single presented frame.
 
-This closes one of the biggest structural parity gaps. What remains is visual
-validation of the final composition and depth behavior.
+The fixed-step browser loop is better than tying motion directly to every RAF,
+but it is still only partial parity with the original cadence.
 
-Impact:
+### 8. Smoke Traversal Itself Is Not the Missing Parity Item Previously Claimed
 
-- runway / field-map behavior is structurally closer to the original
-- inserted PC2 objects now follow the correct high-level path
+The local `FLYBY2/flyby2/ASMOKE.C` iterates smoke tips backward for ribbon,
+wire, trail, and solid smoke. The TypeScript port does the same.
 
-### 6. PC2 Parsing and Runtime Now Cover the Standard Object Types
+The earlier doc claim about a missing forward anti-tremble traversal was not
+supported by the checked-in `FLYBY2/` source tree and has been removed.
 
-The original `i2dpict.c` supports multiple object types including:
+## Performance Audit
 
-- point sets
-- polylines
-- line sequences
-- polygons
+### Highest-Impact CPU Issues
 
-The browser parser/runtime now supports:
+- per-frame `buildFieldSceneGeometry(...)`
+- per-frame `buildAircraftGeometry(...)`
+- per-frame ground ring rebuilds and uploads
+- repeated `Float32Array` allocations for field, aircraft, smoke, and vapor
+- repeated identical uniform uploads before nearly every draw
+- debug HUD DOM churn during active playback
 
-- point sets
-- polylines
-- line sequences
-- polygons
+### Missing Performance Features vs Original Runtime Intent
 
-It also preserves per-object `DST` visibility distances and center-based
-visibility checks derived from `i2dpict.c`.
+- no viewport/bounding-box rejection equivalent before most CPU tessellation
+- no persistent static field mesh residency on the GPU
+- no model-space aircraft draw using the already-built GPU buffers
+- no clean separation of smoke and vapor buffer ownership
 
-Impact:
+## Missing or Divergent Behavior vs Original
 
-- standard PC2 data no longer has to be polygon-only
-- exact raster equivalence for point/line objects still needs visual validation
+These are the main items still missing or materially divergent from the local
+`FLYBY2/` codebase:
 
-### 7. Terrain Port Exists, and Side-Wall Color Mapping Was Corrected
+- browser showcase lighting/sky path replaces the original baseline visual path
+- low-FPS draw cadence still differs from `PassedTime()` loops
+- SRF collision remains a coarse bounding-box helper
 
-The terrain port handles:
+## Suggested Next Verification Targets
 
-- `BLO` entries
-- `L` / `R` diagonal choice
-- per-triangle visibility
-- side-wall generation
+1. Re-run deterministic raw-airport and improved-airport captures after the
+   default-map fix and record the actual live results.
+2. Fix smoke/vapor buffer aliasing before trusting smoke captures.
+3. Move aircraft and static field rendering off the per-frame CPU rebuild path.
+4. Re-run parity captures after those changes and update this report again.
 
-The original terrain code stores side-wall colors in the natural order
-`BOT`, `RIG`, `LEF`, `TOP`. The current renderer now maps those indices
-correctly, but the terrain still needs visual validation against the original
-airport scene.
+## Definition of Done
 
-Impact:
-
-- terrain wall color semantics are no longer obviously wrong in code
-- visual parity for the airport terrain is still not yet trustworthy
-
-### 8. `RGN` Blocks Are No Longer Parse-Only
-
-The original field system exposes region queries and related field helpers. The
-TypeScript port now includes a recursive field-region query matching the
-`BiGetFldRegion()` traversal pattern, and the debug HUD uses it at runtime for
-aircraft and camera positions.
-
-Remaining gap:
-
-- the broader field helper surface from the original engine still needs
-  validation against more than the bundled airport scene
-
-### 9. Terrain Elevation Queries Are Partially Ported
-
-The field-runtime helper layer now includes recursive terrain-elevation lookup
-derived from `BiGetFldElevation()` / `BiTerHeight()`, and the debug HUD reports
-the sampled elevation under the aircraft when terrain coverage exists.
-
-Remaining gap:
-
-- terrain query vectors still need behavioral validation against the original
-- collision helpers still need exact source-level validation
-
-### 10. Browser Input Is Now Much Closer to the Screensaver Contract
-
-Original behavior in `DrawScreen()`:
-
-- `X` sets the quit flag
-- any other key shows the help text for 30 frames
-- `T` triggers render-to-file
-
-Current browser behavior:
-
-- `T` downloads the canvas as PNG
-- `X` stops the animation loop
-- non-special keys show the help prompt for 30 frames
-- the browser-only debug panel now exposes aircraft/maneuver selection,
-  randomize controls, maneuver progress, and telemetry graphs for validation
-- the browser-only debug panel and canvas input now expose pan/tilt/zoom
-  camera trim controls for inspection without changing the underlying
-  maneuver/camera simulation state
-- SRF and PC2 polygon rendering no longer assumes a triangle fan, which fixes
-  the browser-only concave-face artifacts that showed up on some aircraft
-
-This is now an intentional browser adaptation rather than a missing port.
-
----
-
-## Current Status by Subsystem
-
-### Safe to Treat as Ported
-
-- aircraft list and asset loading
-- SRF parser
-- high-level maneuver coverage
-- smoke data structures and append logic
-- `X` quit / help prompt interaction flow
-- standard PC2 parser/runtime coverage
-- field runtime helper surface for queries and metadata
-
-### Ported but Still Needs Validation
-
-- camera spawn and camera tracking
-- final framing after the 2026-03-22 camera/projection correction
-- recursive field composition
-- `LOD` culling
-- final `PC2` overlay / `PLT` scene composition after restoring the split
-- ground / sky backdrop split after replacing the fixed ground slab
-- smoke mode behavior in browser
-- terrain transform / placement
-- exact scene framing and camera distance on representative passes
-- broader parity review of the new concave-polygon tessellation against the
-  original software polygon rasterizer
-
-### Validation Workflow
-
-- Start the app locally with `npm run dev -- --host 127.0.0.1 --port 4180`
-- Capture a deterministic WebGPU frame with:
-  `npm run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png`
-- Compare the captured frame and HUD values against source expectations and any
-  available original-reference screenshots
-
-### Not Yet Fully Ported
-
-- exact raster equivalence for PC2 point/line primitives
-- original TIFF render capture behavior
-- final visual signoff for camera/framing and airport composition
-
----
-
-## Definition of Done for Full Port
-
-The WebGPU version should only be called complete when all of the following are
+The WebGPU port should only be called complete when all of the following are
 true:
 
-1. The six maneuvers visually match the original timing and attitude behavior.
-2. Camera framing matches the original screensaver for representative passes.
-3. The airport scene matches original composition:
-   - runway
-   - signal boards
-   - hangars
-   - tower
-   - terrain
-4. `PC2` and `PLT` follow the same layering and transform rules as the
-   original engine.
-5. Terrain side walls and colors match original data semantics.
-6. All smoke modes behave correctly, not just the default ribbon path.
-7. `RGN` and field runtime semantics are either ported or explicitly declared
-   out of scope.
-8. Browser-specific adaptations are documented separately from parity claims.
-9. The WebGPU output is visually checked against the original on representative
-   straight, roll, loop, and low-runway passes.
+1. `bun run build` passes cleanly.
+2. A raw original-airport validation mode exists and has fresh deterministic captures.
+3. The six maneuvers match original timing and framing on representative runs.
+4. `PC2`, `PLT`, terrain, and smoke behavior are checked against the original.
+5. `flyby2_s` matches the original bundle inventory and defaults.
+6. Browser-only enhancements are documented separately from parity claims.
 
 Until then, the correct label is:
 
-**Active source-faithful reimplementation, not yet complete.**
+**Active source-faithful reimplementation with documented browser-side renderer divergence.**
