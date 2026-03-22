@@ -30,6 +30,22 @@ bun run build
 bun run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png
 ```
 
+## Deploy To Vercel
+
+This app deploys to Vercel as a static Vite build.
+
+1. Import the repository into Vercel.
+2. Keep the project root at the repository root.
+3. Use the default settings from [`vercel.json`](./vercel.json):
+   - Install command: `bun install`
+   - Build command: `bun run build`
+   - Output directory: `dist`
+
+No environment variables are required for the current build.
+
+After deploy, the site still requires a browser with WebGPU support to render
+the scene correctly.
+
 ## Repository Layout
 
 - `src/`: WebGPU renderer, flight logic, parsers, smoke generation, math
