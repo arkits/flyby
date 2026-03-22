@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+package-lock.json
+
+# Local tool state
+.claude/
+
+# Review and parity capture artifacts
+/after-fix-*.png
+/current-flyby*.png
+/flyby-current*.png
+/flyby-parity-*.png
+/flyby-review.png
+/ground-missing.png
+/parity-shot*.png
+/smoke-check-*.png
+/tmp-*.png
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+FLYBY2

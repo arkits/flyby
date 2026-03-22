@@ -1,0 +1,49 @@
+# flyby
+
+TypeScript/WebGPU reimplementation of Soji Yamakawa's original Windows `FLYBY2`
+screensaver. The goal of this repository is behavior parity with the original
+C code in [`FLYBY2/`](./FLYBY2), not a modernized reinterpretation.
+
+## Status
+
+The port is functional but not yet at full parity. The current build can load
+the original aircraft and airport data, run the maneuver scripts, render smoke,
+and draw the field/terrain scene in the browser. Camera/framing and final
+rendering equivalence are still being validated against the original source and
+captured frames.
+
+See [`spec/validation-report.md`](./spec/validation-report.md) for the current
+parity status and [`spec/10-implementation-plan.md`](./spec/10-implementation-plan.md)
+for the remaining work.
+
+## Requirements
+
+- [Bun](https://bun.sh/)
+- A browser/runtime with WebGPU support
+
+## Commands
+
+```sh
+bun install
+bun run dev
+bun run build
+bun run capture:parity -- http://127.0.0.1:4180/ parity-shot-webgpu.png
+```
+
+## Repository Layout
+
+- `src/`: WebGPU renderer, flight logic, parsers, smoke generation, math
+- `public/data/`: original asset files loaded at runtime
+- `FLYBY2/`: original C source used as the source of truth
+- `spec/`: implementation notes, parity tracking, and validation docs
+- `scripts/`: small helper scripts such as deterministic frame capture
+
+## Working Principles
+
+- Prefer source-faithful fixes over visual polish.
+- Treat browser-specific behavior as an adaptation and document it explicitly.
+- Do not claim parity unless it has been checked against the original source or
+  a captured frame.
+
+The repository instructions in [`AGENTS.md`](./AGENTS.md) describe the current
+priorities and the files to consult when behavior is unclear.
