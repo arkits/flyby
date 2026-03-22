@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 
 const targetUrl = process.argv[2] ?? 'http://127.0.0.1:4180/';
 const outputPath = process.argv[3] ?? 'parity-shot-webgpu.png';
+const waitMs = Number(process.argv[4] ?? '2000');
 
 const browser = await chromium.launch({
   headless: true,
@@ -22,7 +23,7 @@ try {
   });
 
   await page.goto(targetUrl, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(Number.isFinite(waitMs) && waitMs >= 0 ? waitMs : 2000);
   await page.screenshot({ path: outputPath });
 
   const debugText = await page.locator('body').innerText().catch(() => '');
@@ -30,6 +31,7 @@ try {
   console.log(JSON.stringify({
     targetUrl,
     outputPath,
+    waitMs,
     debugText,
     captureState,
   }));

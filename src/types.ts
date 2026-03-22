@@ -297,6 +297,8 @@ export type FlybyMode = 'flyby2' | 'flyby2_s';
 export type AppMode = 'scriptedFlyby' | 'freeFlight' | 'drive';
 export type MapVariant = 'airport' | 'airport-improved' | 'airport-night' | 'downtown';
 export type SkyMode = 'clear' | 'night' | 'hazy';
+export type FlybyCameraView = 'director' | 'thirdPerson' | 'topDown';
+export type FlybyTopDownMode = 'follow' | 'static';
 export type CameraMode = 'chase' | 'orbit' | 'cockpit';
 export type VehicleKind = 'aircraft' | 'car';
 
@@ -545,6 +547,10 @@ export interface DebugPanelRefs {
   mapSelect: HTMLSelectElement;
   aircraftSelect: HTMLSelectElement;
   maneuverSelect: HTMLSelectElement;
+  aircraftRandomStatus: HTMLDivElement;
+  maneuverRandomStatus: HTMLDivElement;
+  cameraViewSelect: HTMLSelectElement;
+  topDownModeSelect: HTMLSelectElement;
   randomizeButton: HTMLButtonElement;
   previousManeuverButton: HTMLButtonElement;
   pauseButton: HTMLButtonElement;
@@ -615,6 +621,7 @@ export interface AppState {
     targetVecMatrix: Vec3;
     targetScreen: ScreenPoint | null;
     projectionMag: number;
+    cameraPos: Vec3;
     objectRegion: string;
     eyeRegion: string;
     objectElevation: string;
@@ -633,6 +640,9 @@ export interface AppState {
     lastX: number;
     lastY: number;
   };
+  cameraView: FlybyCameraView;
+  topDownMode: FlybyTopDownMode;
+  topDownAnchor: Vec3 | null;
 
   // Maneuver state
   show: ShowObj;

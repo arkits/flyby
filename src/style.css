@@ -15,6 +15,9 @@
   --debug-panel-danger: #ff8c69;
   --debug-panel-grid: rgba(143, 215, 255, 0.12);
   --debug-panel-shadow: rgba(0, 0, 0, 0.62);
+  --fault-danger: #ff5b45;
+  --fault-danger-soft: rgba(255, 91, 69, 0.22);
+  --fault-warning: #ffd2a2;
 }
 
 * {
@@ -104,9 +107,9 @@ html, body {
   place-items: center;
   padding: clamp(20px, 4vw, 40px);
   background:
-    radial-gradient(circle at top, rgba(135, 192, 226, 0.18), transparent 42%),
-    radial-gradient(circle at bottom right, rgba(224, 154, 78, 0.14), transparent 38%),
-    linear-gradient(180deg, rgba(4, 10, 17, 0.48), rgba(2, 7, 13, 0.84));
+    radial-gradient(circle at top center, rgba(255, 102, 77, 0.26), transparent 36%),
+    radial-gradient(circle at 82% 22%, rgba(255, 196, 126, 0.2), transparent 24%),
+    linear-gradient(180deg, rgba(42, 7, 4, 0.5), rgba(8, 10, 14, 0.76) 22%, rgba(2, 6, 11, 0.96));
   backdrop-filter: blur(18px);
   opacity: 0;
   pointer-events: none;
@@ -121,16 +124,21 @@ html, body {
 
 .fault-card {
   position: relative;
-  width: min(760px, 100%);
-  overflow: hidden;
-  border: 1px solid rgba(126, 198, 232, 0.28);
+  width: min(980px, 100%);
+  max-height: min(calc(100vh - 72px), 900px);
+  overflow: auto;
+  border: 1px solid rgba(255, 128, 98, 0.28);
   background:
-    linear-gradient(135deg, rgba(18, 34, 48, 0.92), rgba(6, 15, 24, 0.97)),
+    radial-gradient(circle at top center, rgba(255, 120, 84, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(41, 9, 9, 0.98), rgba(11, 17, 27, 0.97) 26%, rgba(3, 10, 18, 0.98)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 18%);
   box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.58),
+    0 32px 110px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 109, 80, 0.08),
     inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   color: #eef8ff;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 131, 98, 0.34) transparent;
 }
 
 .fault-card::before,
@@ -143,22 +151,24 @@ html, body {
 
 .fault-card::before {
   background:
-    linear-gradient(90deg, rgba(143, 215, 255, 0.07) 0 1px, transparent 1px 18px),
-    linear-gradient(180deg, rgba(143, 215, 255, 0.05) 0 1px, transparent 1px 18px);
-  opacity: 0.28;
+    linear-gradient(90deg, rgba(255, 123, 91, 0.08) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(255, 123, 91, 0.05) 0 1px, transparent 1px 18px);
+  opacity: 0.3;
 }
 
 .fault-card::after {
   inset: 14px;
-  border: 1px solid rgba(143, 215, 255, 0.08);
+  border: 1px solid rgba(255, 161, 118, 0.12);
 }
 
 .fault-card__rail {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 8px;
-  background: linear-gradient(180deg, #8fd7ff, #e8a261 86%);
-  box-shadow: 0 0 28px rgba(143, 215, 255, 0.35);
+  width: 10px;
+  background: linear-gradient(180deg, #ff7f63, #ffb56d 86%);
+  box-shadow:
+    0 0 28px rgba(255, 120, 84, 0.42),
+    10px 0 36px rgba(255, 106, 73, 0.14);
 }
 
 .fault-card__masthead {
@@ -167,150 +177,218 @@ html, body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 28px 32px 0 40px;
+  padding: 34px 36px 0 48px;
 }
 
 .fault-card__eyebrow {
-  color: rgba(143, 215, 255, 0.78);
-  font-size: 11px;
-  font-weight: 600;
+  color: rgba(255, 191, 160, 0.84);
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.28em;
   text-transform: uppercase;
 }
 
 .fault-card__title {
   margin-top: 10px;
-  color: #f6fbff;
-  font-size: clamp(28px, 4vw, 44px);
+  color: #fff4ef;
+  font-size: clamp(42px, 7vw, 82px);
   font-weight: 700;
-  letter-spacing: 0.1em;
-  line-height: 0.96;
+  letter-spacing: 0.08em;
+  line-height: 0.92;
   text-transform: uppercase;
-  text-shadow: 0 0 18px rgba(143, 215, 255, 0.12);
+  text-shadow:
+    0 0 24px rgba(255, 110, 77, 0.24),
+    0 6px 18px rgba(0, 0, 0, 0.32);
 }
 
 .fault-card__badge {
-  align-self: center;
-  padding: 10px 14px;
-  border: 1px solid rgba(232, 162, 97, 0.34);
-  background: rgba(232, 162, 97, 0.12);
-  color: #ffd7b2;
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 159, 119, 0.44);
+  background:
+    linear-gradient(180deg, rgba(255, 127, 99, 0.28), rgba(89, 23, 14, 0.5)),
+    rgba(32, 10, 8, 0.74);
+  color: #fff0de;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 235, 214, 0.06),
+    0 0 24px rgba(255, 111, 80, 0.2);
+  animation: fault-badge-pulse 1.8s ease-in-out infinite;
+}
+
+.fault-card__message,
+.fault-card__hint {
+  position: relative;
+  max-width: 68ch;
+  padding-left: 48px;
+  padding-right: 36px;
+}
+
+.fault-card__message {
+  margin-top: 26px;
+  color: rgba(232, 245, 255, 0.96);
+  font-size: 19px;
+  line-height: 1.58;
+  text-wrap: pretty;
+}
+
+.fault-card__hint {
+  margin-top: 16px;
+  color: rgba(255, 210, 162, 0.96);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.fault-card__warning {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 28px 36px 0 48px;
+  padding: 18px 20px 20px;
+  border: 1px solid rgba(255, 126, 92, 0.22);
+  border-left: 4px solid rgba(255, 111, 80, 0.9);
+  background:
+    linear-gradient(90deg, rgba(255, 102, 74, 0.14), rgba(255, 102, 74, 0.03) 42%, transparent 100%),
+    rgba(24, 11, 13, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.fault-card__warning-label {
+  color: rgba(255, 183, 148, 0.9);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.26em;
   text-transform: uppercase;
 }
 
-.fault-card__message,
-.fault-card__hint {
-  position: relative;
-  max-width: 62ch;
-  padding-left: 40px;
-  padding-right: 32px;
-}
-
-.fault-card__message {
-  margin-top: 22px;
-  color: rgba(232, 245, 255, 0.96);
-  font-size: 15px;
-  line-height: 1.6;
-}
-
-.fault-card__hint {
-  margin-top: 10px;
-  color: rgba(255, 214, 178, 0.9);
-  font-size: 12px;
+.fault-card__warning-text {
+  color: #fff2e3;
+  font-size: 14px;
+  font-weight: 600;
   letter-spacing: 0.08em;
+  line-height: 1.5;
   text-transform: uppercase;
+}
+
+.fault-card__footer {
+  position: relative;
+  margin-top: 30px;
+  padding: 24px 36px 34px 48px;
+  border-top: 1px solid rgba(255, 137, 103, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 111, 80, 0.06), transparent 20%),
+    linear-gradient(180deg, rgba(4, 10, 16, 0.5), rgba(3, 8, 14, 0.08));
 }
 
 .fault-card__meta {
   position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 26px 32px 0 40px;
+  gap: 14px;
 }
 
 .fault-card__meta-item {
-  padding: 14px 14px 15px;
-  border: 1px solid rgba(143, 215, 255, 0.14);
+  min-height: 126px;
+  padding: 16px 16px 18px;
+  border: 1px solid rgba(255, 136, 104, 0.16);
   background:
-    linear-gradient(180deg, rgba(143, 215, 255, 0.08), transparent 72%),
-    rgba(6, 16, 25, 0.72);
+    linear-gradient(180deg, rgba(255, 117, 87, 0.12), transparent 72%),
+    rgba(5, 13, 21, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .fault-card__meta-item span {
   display: block;
-  margin-bottom: 8px;
-  color: rgba(143, 215, 255, 0.68);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
+  margin-bottom: 10px;
+  color: rgba(255, 178, 145, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 
 .fault-card__meta-item strong {
   display: block;
-  color: #f3fbff;
-  font-size: 14px;
+  color: #fff8f4;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  line-height: 1.24;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .fault-card__actions {
   position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 24px 32px 0 40px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.25fr) repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .fault-card__button {
   appearance: none;
-  min-height: 40px;
-  padding: 10px 16px;
-  border: 1px solid rgba(143, 215, 255, 0.2);
+  min-height: 56px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 154, 117, 0.2);
   background:
-    linear-gradient(180deg, rgba(143, 215, 255, 0.1), transparent 78%),
-    rgba(5, 14, 23, 0.9);
+    linear-gradient(180deg, rgba(255, 124, 89, 0.12), transparent 78%),
+    rgba(5, 14, 23, 0.94);
   color: #eef8ff;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
 }
 
 .fault-card__button.is-primary {
-  border-color: rgba(232, 162, 97, 0.32);
+  border-color: rgba(255, 182, 124, 0.38);
   background:
-    linear-gradient(180deg, rgba(255, 216, 166, 0.98), rgba(232, 162, 97, 0.9)),
+    linear-gradient(180deg, #ffd2a1, #ff9e6b 64%, #d85d42),
     rgba(5, 14, 23, 0.9);
-  color: #1c1007;
+  color: #220d07;
+  box-shadow:
+    0 10px 26px rgba(255, 117, 87, 0.24),
+    inset 0 1px 0 rgba(255, 250, 241, 0.42);
 }
 
 .fault-card__button:hover {
   transform: translateY(-1px);
-  border-color: rgba(143, 215, 255, 0.42);
-  box-shadow: inset 0 0 0 1px rgba(143, 215, 255, 0.08);
+  border-color: rgba(255, 183, 141, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 183, 141, 0.08),
+    0 12px 26px rgba(0, 0, 0, 0.2);
 }
 
 .fault-card__button:focus {
-  outline: 1px solid rgba(125, 225, 212, 0.75);
+  outline: 1px solid rgba(255, 210, 162, 0.9);
   outline-offset: 2px;
 }
 
 .fault-card__details {
   position: relative;
-  margin: 18px 32px 32px 40px;
-  padding: 16px 18px;
-  border: 1px solid rgba(143, 215, 255, 0.14);
-  background: rgba(2, 9, 15, 0.92);
-  color: rgba(216, 238, 248, 0.88);
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 136, 104, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 112, 80, 0.06), transparent 12%),
+    rgba(2, 9, 15, 0.92);
+  color: rgba(243, 226, 217, 0.9);
   font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
   font-size: 11px;
   line-height: 1.5;
@@ -319,7 +397,7 @@ html, body {
   max-height: min(36vh, 320px);
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(143, 215, 255, 0.24) transparent;
+  scrollbar-color: rgba(255, 142, 110, 0.28) transparent;
 }
 
 .fault-card__details::-webkit-scrollbar {
@@ -327,9 +405,22 @@ html, body {
 }
 
 .fault-card__details::-webkit-scrollbar-thumb {
-  background: rgba(143, 215, 255, 0.24);
+  background: rgba(255, 142, 110, 0.28);
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+@keyframes fault-badge-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 235, 214, 0.06),
+      0 0 16px rgba(255, 111, 80, 0.14);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 235, 214, 0.12),
+      0 0 32px rgba(255, 111, 80, 0.3);
+  }
 }
 
 .debug-console {
@@ -553,6 +644,22 @@ html, body {
 .debug-console__control {
   display: grid;
   gap: 4px;
+}
+
+.debug-console__control-status {
+  min-height: 18px;
+  padding: 4px 8px;
+  border-left: 2px solid rgba(125, 225, 212, 0.55);
+  background: linear-gradient(90deg, rgba(125, 225, 212, 0.1), rgba(125, 225, 212, 0.02));
+  color: var(--debug-panel-accent-2);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.debug-console__control-status[hidden] {
+  display: none;
 }
 
 .debug-console__control span,
@@ -1210,24 +1317,38 @@ html, body {
     grid-template-columns: 36px 68px 36px minmax(0, 1fr);
   }
 
-  .fault-card__masthead,
+  .fault-card {
+    max-height: calc(100vh - 32px);
+  }
+
+  .fault-card__masthead {
+    padding: 28px 28px 0 36px;
+  }
+
   .fault-card__message,
-  .fault-card__hint,
-  .fault-card__actions,
-  .fault-card__details {
-    padding-left: 28px;
-    padding-right: 24px;
+  .fault-card__hint {
+    padding-left: 36px;
+    padding-right: 28px;
+  }
+
+  .fault-card__warning {
+    margin: 24px 28px 0 36px;
+  }
+
+  .fault-card__footer {
+    padding: 22px 28px 28px 36px;
   }
 
   .fault-card__meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-left: 28px;
-    margin-right: 24px;
   }
 
-  .fault-card__details {
-    margin-left: 28px;
-    margin-right: 24px;
+  .fault-card__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fault-card__button.is-primary {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1238,14 +1359,50 @@ html, body {
 
   .fault-card__masthead {
     display: grid;
+    padding: 24px 22px 0 30px;
   }
 
   .fault-card__badge {
     justify-self: start;
   }
 
+  .fault-card__title {
+    font-size: clamp(34px, 14vw, 56px);
+  }
+
+  .fault-card__message,
+  .fault-card__hint {
+    padding-left: 30px;
+    padding-right: 22px;
+  }
+
+  .fault-card__warning {
+    margin: 22px 22px 0 30px;
+    padding: 16px;
+  }
+
+  .fault-card__warning-text {
+    font-size: 13px;
+  }
+
+  .fault-card__footer {
+    padding: 20px 22px 24px 30px;
+  }
+
   .fault-card__meta {
     grid-template-columns: 1fr;
+  }
+
+  .fault-card__meta-item {
+    min-height: 0;
+  }
+
+  .fault-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .fault-card__button.is-primary {
+    grid-column: auto;
   }
 }
 

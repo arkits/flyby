@@ -396,13 +396,10 @@ export class Renderer {
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
-        // Keep the runway overlay slightly above the support plane so its
-        // internal quad split does not fight the ground underneath.
-        depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        depthBias: -32,
-        depthBiasSlopeScale: -1,
-        depthBiasClamp: 0,
+        // Source-faithful PC2 maps are painter-ordered in BiOvwPc2, so later
+        // runway markings must overwrite the base strip instead of z-fighting.
+        depthWriteEnabled: false,
+        depthCompare: 'always',
         format: 'depth24plus',
       },
     });
@@ -429,7 +426,7 @@ export class Renderer {
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
+        depthCompare: 'always',
         format: 'depth24plus',
       },
     });
@@ -456,7 +453,7 @@ export class Renderer {
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
+        depthCompare: 'always',
         format: 'depth24plus',
       },
     });
@@ -955,7 +952,13 @@ export class Renderer {
       passEncoder.draw(fieldGpu.sceneShadow.vertexCount);
     }
 
-    // --- Draw smoke ---
+    // --- Draw dynamic actors before smoke, matching FLYBY.C ---
+    for (const actor of dynamicActors) {
+      this.drawDynamicActor(passEncoder, actor, uniformSlot, viewProj, eye, prj, environment);
+    }
+
+    // --- Draw smoke after aircraft so depth testing handles front/behind
+    // layering instead of forcing the aircraft to always sit on top.
     if (smokeGeometry.lit.length > 0) {
       this.smokeBuffer = this.updateOrCreateBuffer(
         smokeGeometry.lit,
@@ -1006,12 +1009,6 @@ export class Renderer {
       passEncoder.setPipeline(this.smokeLinePipeline);
       passEncoder.setVertexBuffer(0, this.vaporLineBuffer);
       passEncoder.draw(vaporGeometry.lines.length / UNLIT_STRIDE);
-    }
-
-    // --- Draw dynamic actors after smoke so aircraft remain readable in
-    // smoke-heavy maneuvers. Smoke does not write depth in this adaptation.
-    for (const actor of dynamicActors) {
-      this.drawDynamicActor(passEncoder, actor, uniformSlot, viewProj, eye, prj, environment);
     }
 
     passEncoder.end();

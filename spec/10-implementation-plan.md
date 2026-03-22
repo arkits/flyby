@@ -31,6 +31,8 @@ to `FLYBY2`.
 - recursive field traversal and runtime helpers are present
 - the browser environment stack is coherent enough to support multiple map
   variants today
+- raw and improved runway captures now show the authored PC2 markings again
+  after restoring painter-ordered overlay drawing
 - the renderer now uploads static field geometry once instead of rebuilding it
   every frame
 - gameplay modes now use a fixed-step vehicle/camera/input runtime separate
@@ -73,7 +75,10 @@ measured instead of guessed.
   - loop
   - low runway pass
 - Reconcile low-FPS draw cadence with the original `PassedTime()` behavior.
-- Re-check `PC2` overlay vs `PLT` insertion ordering with raw airport captures.
+- Keep `PC2` overlay painter ordering locked to `BiOvwPc2` while validating
+  `PLT` insertion ordering with raw airport captures.
+- Keep aircraft insertion ahead of smoke so ribbon/vapor occlusion follows the
+  original `FLYBY.C` draw order.
 - Validate terrain side walls, diagonals, and placement against `iterrain.c`.
 - Decide whether smoke color transition semantics should follow the literal
   checked-in `ASMOKE.C` branch or stay as the safer browser interpretation.
@@ -83,6 +88,7 @@ measured instead of guessed.
 **Done when**
 
 - parity claims are based on raw captures, not augmented scenes
+- browser-only debug cameras stay clearly labeled as non-parity inspection aids
 - camera, terrain, smoke, and draw ordering are source-audited
 
 ## Phase 2: Remove the Biggest CPU Bottlenecks
@@ -138,12 +144,16 @@ allowed to look better on purpose.
 
 - Keep the environment-driven shader path in the browser-only track:
   - procedural sky gradients and cloud bands
+  - restrained night-sky augmentations such as point-sampled stars and subtle aurora ribbons
   - fog / haze
   - hemisphere lighting
   - directional key light control
   - emissive runway / apron / city accents
 - Maintain dedicated sky and support-ground passes.
 - Keep `airport-improved` as the richest airport showcase variant.
+- Keep showcase airport circulation readable from top-down:
+  - perimeter/service roads instead of runway-crossing road grids
+  - suppress the tiny raw `sample.ter` patch when it reads as a stray square
 - Add higher-quality contact shadows for large structures.
 - Add procedural runway and terrain material breakup that scales with quality.
 - Introduce quality tiers so parity mode stays cheap on integrated GPUs while
@@ -200,8 +210,8 @@ After each non-trivial phase:
 ## Immediate Next Steps
 
 1. Add a raw no-augmentation airport mode for honest parity capture.
-2. Re-run deterministic runway / signal / loop captures after the renderer
-   uniform-slot fix.
+2. Re-run deterministic signal / loop captures after the runway-overlay
+   painter-order fix.
 3. Move aircraft and static field geometry out of the per-frame rebuild path.
 4. Add earlier viewport/bounding-box rejection before CPU tessellation.
 

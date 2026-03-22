@@ -88,6 +88,25 @@ interface AirportEnhancementOptions {
   showcaseDensity: boolean;
 }
 
+interface RoadMarkingSpec {
+  offsetX: number;
+  width: number;
+  color: Color;
+  dashLength: number;
+  gapLength: number;
+  inset?: number;
+}
+
+interface RoadStyle {
+  shoulderColor: Color;
+  asphaltColor: Color;
+  shoulderWidth: number;
+  medianColor?: Color;
+  medianWidth?: number;
+  medianInset?: number;
+  markings: RoadMarkingSpec[];
+}
+
 export function resolveFieldFileForMap(defaultFieldFile: string, mapVariant: MapVariant): string {
   switch (mapVariant) {
     case 'downtown':
@@ -148,7 +167,7 @@ function enhanceAirportField(
     gnd: palette.ground ?? field.gnd,
     ter: field.ter.map(entry => ({
       ...entry,
-      ter: flattenAirportTerrain(entry.ter),
+      ter: flattenAirportTerrain(entry.ter, palette),
     })),
     pc2: [...field.pc2, ...pc2Entries],
     srf: [...baseSrf, ...srfEntries],
@@ -184,13 +203,6 @@ function createAirportOverlayEntries(
     createRectangleObject(palette.dryGrass, 324, 26, 166, 172, 16384),
     createRectangleObject(palette.soil, -8, -82, 88, 52, 16384),
     createRectangleObject(palette.soil, 274, -206, 72, 48, 16384),
-    createRectangleObject(palette.asphalt, -315, 86, 14, 650, 0),
-    createRectangleObject(palette.asphalt, -150, 330, 350, 14, 16384),
-    createRectangleObject(palette.asphalt, -80, -162, 520, 14, 16384),
-    createRectangleObject(palette.asphalt, -26, -92, 154, 12, 16384),
-    createRectangleObject(palette.asphalt, 52, -142, 288, 12, 16384),
-    createRectangleObject(palette.asphalt, 205, -58, 250, 12, -6200),
-    createRectangleObject(palette.asphalt, 324, -118, 188, 12, 16384),
     createRectangleObject(palette.apron, -170, 148, 180, 390, 0),
     createRectangleObject(palette.apron, -38, -102, 150, 72, 16384),
     createRectangleObject(palette.apron, 284, -148, 132, 84, 16384),
@@ -227,11 +239,6 @@ function createAirportOverlayEntries(
       createRectangleObject(palette.apron, -204, 244, 124, 92, 0),
       createRectangleObject(palette.apron, 332, -214, 104, 98, 16384),
       createRectangleObject(palette.apron, 404, -164, 84, 74, 16384),
-      createRectangleObject(palette.asphalt, -238, 12, 16, 308, 0),
-      createRectangleObject(palette.asphalt, -60, 252, 286, 12, 16384),
-      createRectangleObject(palette.asphalt, 118, -214, 334, 12, 16384),
-      createRectangleObject(palette.asphalt, 372, -78, 18, 204, 0),
-      createRectangleObject(palette.asphalt, 246, -262, 148, 12, 16384),
       createRectangleObject(palette.taxiway, -28, 22, 18, 2200, 0),
       createRectangleObject(palette.taxiway, 64, 18, 18, 1800, 0),
       createRectangleObject(palette.taxiway, -124, 88, 82, 14, 16384),
@@ -261,6 +268,8 @@ function createAirportOverlayEntries(
       ...createParkingPadObjects(332, -210, 2, 56, 56, 68, palette.apron, palette.markingWhite),
     );
   }
+
+  objects.push(...createAirportRoadObjects(palette, options));
 
   if (options.includeNightLights) {
     objects.push(
@@ -349,7 +358,7 @@ function createAirportBuildingEntries(
   }
 
   if (options.includeNightLights) {
-    const lightPole = createLightPoleModel(28, palette.lightWhite!, colorFromRGB(72, 76, 84));
+    const lightPole = createLightPoleModel(28, palette.lightAmber!, colorFromRGB(72, 76, 84));
     specs.push(
       { name: 'light-pole-west-1', pos: { p: vec3(-172, 0, -122), a: { h: 0, p: 0, b: 0 } }, model: lightPole },
       { name: 'light-pole-west-2', pos: { p: vec3(-172, 0, -36), a: { h: 0, p: 0, b: 0 } }, model: lightPole },
@@ -400,28 +409,70 @@ function createAirportBuildingEntries(
 }
 
 function createDowntownOverlayEntries(): FieldPc2[] {
-  const asphalt = colorFromRGB(56, 60, 66);
-  const avenue = colorFromRGB(64, 68, 74);
+  const asphalt = colorFromRGB(54, 58, 64);
+  const avenue = colorFromRGB(62, 66, 72);
+  const shoulder = colorFromRGB(110, 112, 114);
   const plaza = colorFromRGB(118, 122, 126);
   const park = colorFromRGB(62, 92, 68);
   const lane = colorFromRGB(224, 206, 132);
+  const edge = colorFromRGB(232, 232, 228);
   const crosswalk = colorFromRGB(214, 216, 220);
   const water = colorFromRGB(56, 92, 138);
 
   const objects: Pc2Object[] = [];
-  const roadXs = [-720, -480, -240, 0, 240, 480, 720];
-  const roadZs = [-720, -480, -240, 0, 240, 480, 720];
+  const blockXs = [-810, -570, -330, -90, 150, 390, 630, 870];
+  const blockZs = [-810, -570, -330, -90, 150, 390, 630, 870];
+  const roadXs = buildMidpoints(blockXs);
+  const roadZs = buildMidpoints(blockZs);
+  const avenueStyle: RoadStyle = {
+    shoulderColor: shoulder,
+    asphaltColor: avenue,
+    shoulderWidth: 4,
+    medianColor: colorFromRGB(86, 86, 82),
+    medianWidth: 5,
+    medianInset: 20,
+    markings: [
+      { offsetX: -14, width: 1.6, color: edge, dashLength: 16, gapLength: 12, inset: 18 },
+      { offsetX: 14, width: 1.6, color: edge, dashLength: 16, gapLength: 12, inset: 18 },
+      { offsetX: -3.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 18 },
+      { offsetX: 3.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 18 },
+      { offsetX: -22, width: 1.4, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
+      { offsetX: 22, width: 1.4, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
+    ],
+  };
+  const streetStyle: RoadStyle = {
+    shoulderColor: shoulder,
+    asphaltColor: asphalt,
+    shoulderWidth: 3,
+    markings: [
+      { offsetX: 0, width: 1.4, color: lane, dashLength: 18, gapLength: 16, inset: 14 },
+      { offsetX: -13, width: 1.1, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
+      { offsetX: 13, width: 1.1, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
+    ],
+  };
 
   for (const x of roadXs) {
-    const width = x === 0 ? 42 : 26;
-    objects.push(createRectangleObject(x === 0 ? avenue : asphalt, x, 0, width, 2100, 0));
-    objects.push(createPolylineObject(lane, [{ x, y: -980 }, { x, y: 980 }]));
+    const isAvenue = Math.abs(x) < 90;
+    objects.push(...createRoadSegmentObjects(
+      x,
+      0,
+      isAvenue ? 46 : 28,
+      2140,
+      0,
+      isAvenue ? avenueStyle : streetStyle,
+    ));
   }
 
   for (const z of roadZs) {
-    const width = z === 0 ? 42 : 26;
-    objects.push(createRectangleObject(z === 0 ? avenue : asphalt, 0, z, 2100, width, 16384));
-    objects.push(createPolylineObject(lane, [{ x: -980, y: z }, { x: 980, y: z }]));
+    const isAvenue = Math.abs(z) < 90;
+    objects.push(...createRoadSegmentObjects(
+      0,
+      z,
+      isAvenue ? 46 : 28,
+      2140,
+      16384,
+      isAvenue ? avenueStyle : streetStyle,
+    ));
   }
 
   objects.push(
@@ -432,8 +483,8 @@ function createDowntownOverlayEntries(): FieldPc2[] {
     createRectangleObject(water, -960, -620, 220, 1150, 0),
   );
 
-  for (const x of [-720, -480, -240, 0, 240, 480, 720]) {
-    for (const z of [-720, -480, -240, 0, 240, 480, 720]) {
+  for (const x of roadXs) {
+    for (const z of roadZs) {
       if (Math.abs(x) < 80 && Math.abs(z) < 80) {
         continue;
       }
@@ -449,12 +500,16 @@ function createDowntownOverlayEntries(): FieldPc2[] {
   }];
 }
 
-function flattenAirportTerrain(terrain: Terrain): Terrain {
+function flattenAirportTerrain(terrain: Terrain, palette: AirportPalette): Terrain {
   return {
     ...terrain,
+    side: [0, 0, 0, 0],
+    sdCol: [palette.soil, palette.soil, palette.soil, palette.soil],
     blocks: terrain.blocks.map(block => ({
       ...block,
       y: 0,
+      vis: [0, 0],
+      col: [palette.dryGrass, palette.grass],
     })),
   };
 }
@@ -664,6 +719,84 @@ function createParkingPadObjects(
   return objects;
 }
 
+function createAirportRoadObjects(
+  palette: AirportPalette,
+  options: AirportEnhancementOptions,
+): Pc2Object[] {
+  const mainRoadStyle: RoadStyle = {
+    shoulderColor: palette.soil,
+    asphaltColor: palette.asphalt,
+    shoulderWidth: 2.5,
+    markings: [
+      { offsetX: 0, width: 1.2, color: palette.markingYellow, dashLength: 18, gapLength: 16, inset: 12 },
+      { offsetX: -6.1, width: 0.9, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 10 },
+      { offsetX: 6.1, width: 0.9, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 10 },
+    ],
+  };
+  const serviceRoadStyle: RoadStyle = {
+    shoulderColor: palette.soil,
+    asphaltColor: palette.asphalt,
+    shoulderWidth: 1.6,
+    markings: [
+      { offsetX: 0, width: 0.9, color: palette.markingYellow, dashLength: 12, gapLength: 16, inset: 9 },
+      { offsetX: -4.5, width: 0.55, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 8 },
+      { offsetX: 4.5, width: 0.55, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 8 },
+    ],
+  };
+  const apronRoadStyle: RoadStyle = {
+    shoulderColor: palette.apron,
+    asphaltColor: palette.asphalt,
+    shoulderWidth: 1.2,
+    markings: [
+      { offsetX: 0, width: 0.9, color: palette.markingYellow, dashLength: 14, gapLength: 18, inset: 10 },
+      { offsetX: -4.4, width: 0.5, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 8 },
+      { offsetX: 4.4, width: 0.5, color: palette.markingWhite, dashLength: 0, gapLength: 0, inset: 8 },
+    ],
+  };
+
+  const segments = [
+    // West-side perimeter and gate roads stay clear of the active runway pair.
+    { centerX: -304, centerY: 112, width: 13, length: 724, heading: 0, style: mainRoadStyle },
+    { centerX: -172, centerY: 326, width: 13, length: 272, heading: 16384, style: mainRoadStyle },
+    { centerX: -126, centerY: -214, width: 13, length: 300, heading: 16384, style: mainRoadStyle },
+    // Frontage road along the west apron and hangar row.
+    { centerX: -88, centerY: 144, width: 10, length: 378, heading: 0, style: apronRoadStyle },
+    // Hangar and support spurs.
+    { centerX: -196, centerY: 28, width: 9, length: 72, heading: 16384, style: serviceRoadStyle },
+    { centerX: -196, centerY: 118, width: 9, length: 72, heading: 16384, style: serviceRoadStyle },
+    { centerX: -196, centerY: 206, width: 9, length: 72, heading: 16384, style: serviceRoadStyle },
+    { centerX: -196, centerY: 296, width: 9, length: 72, heading: 16384, style: serviceRoadStyle },
+    { centerX: -176, centerY: 244, width: 9, length: 78, heading: 16384, style: serviceRoadStyle },
+    // South ramp access remains on the apron side instead of cutting through the runway complex.
+    { centerX: -52, centerY: -108, width: 10, length: 184, heading: 0, style: apronRoadStyle },
+    { centerX: 6, centerY: -168, width: 10, length: 128, heading: 16384, style: apronRoadStyle },
+    // East-side logistics road sits outside the runway shoulder with short maintenance spurs.
+    { centerX: 438, centerY: -72, width: 13, length: 342, heading: 0, style: mainRoadStyle },
+    { centerX: 404, centerY: 82, width: 9, length: 96, heading: 16384, style: serviceRoadStyle },
+    { centerX: 412, centerY: -86, width: 9, length: 116, heading: 16384, style: serviceRoadStyle },
+    { centerX: 414, centerY: -190, width: 9, length: 146, heading: 16384, style: serviceRoadStyle },
+  ];
+
+  if (options.showcaseDensity) {
+    segments.push(
+      { centerX: -236, centerY: 166, width: 9, length: 286, heading: 0, style: serviceRoadStyle },
+      { centerX: -156, centerY: 286, width: 9, length: 112, heading: 16384, style: serviceRoadStyle },
+      { centerX: 104, centerY: -214, width: 9, length: 162, heading: 16384, style: serviceRoadStyle },
+      { centerX: 468, centerY: -132, width: 9, length: 154, heading: 0, style: serviceRoadStyle },
+      { centerX: 404, centerY: -252, width: 9, length: 176, heading: 16384, style: serviceRoadStyle },
+    );
+  }
+
+  return segments.flatMap(segment => createRoadSegmentObjects(
+    segment.centerX,
+    segment.centerY,
+    segment.width,
+    segment.length,
+    segment.heading,
+    segment.style,
+  ));
+}
+
 function createCrosswalkObject(centerX: number, centerY: number, color: Color): Pc2Object {
   const objects = [
     createRectangleObject(color, centerX - 16, centerY, 6, 22, 0),
@@ -747,6 +880,27 @@ function createRectangleObject(
   };
 }
 
+function createOffsetRectangleObject(
+  color: Color,
+  centerX: number,
+  centerY: number,
+  width: number,
+  length: number,
+  heading: number,
+  offsetX: number,
+  offsetY: number,
+): Pc2Object {
+  const offset = rotatePoint({ x: offsetX, y: offsetY }, heading);
+  return createRectangleObject(
+    color,
+    centerX + offset.x,
+    centerY + offset.y,
+    width,
+    length,
+    heading,
+  );
+}
+
 function createPolylineObject(color: Color, vertices: Vec2[]): Pc2Object {
   return {
     type: 'PLL',
@@ -765,6 +919,82 @@ function rotatePoint(point: Vec2, heading: number): Vec2 {
     x: c * point.x - s * point.y,
     y: s * point.x + c * point.y,
   };
+}
+
+function createRoadSegmentObjects(
+  centerX: number,
+  centerY: number,
+  width: number,
+  length: number,
+  heading: number,
+  style: RoadStyle,
+): Pc2Object[] {
+  const objects: Pc2Object[] = [];
+  if (style.shoulderWidth > 0) {
+    objects.push(createRectangleObject(
+      style.shoulderColor,
+      centerX,
+      centerY,
+      width + style.shoulderWidth * 2,
+      length,
+      heading,
+    ));
+  }
+  objects.push(createRectangleObject(style.asphaltColor, centerX, centerY, width, length, heading));
+
+  if (style.medianColor && style.medianWidth && style.medianWidth > 0) {
+    const medianInset = style.medianInset ?? 18;
+    objects.push(createRectangleObject(
+      style.medianColor,
+      centerX,
+      centerY,
+      style.medianWidth,
+      Math.max(16, length - medianInset * 2),
+      heading,
+    ));
+  }
+
+  for (const marking of style.markings) {
+    const inset = marking.inset ?? 10;
+    if (marking.gapLength <= 0 || marking.dashLength <= 0) {
+      objects.push(createOffsetRectangleObject(
+        marking.color,
+        centerX,
+        centerY,
+        marking.width,
+        Math.max(8, length - inset * 2),
+        heading,
+        marking.offsetX,
+        0,
+      ));
+      continue;
+    }
+
+    const step = marking.dashLength + marking.gapLength;
+    const half = Math.max(0, (length * 0.5) - inset - (marking.dashLength * 0.5));
+    for (let y = -half; y <= half + 0.001; y += step) {
+      objects.push(createOffsetRectangleObject(
+        marking.color,
+        centerX,
+        centerY,
+        marking.width,
+        marking.dashLength,
+        heading,
+        marking.offsetX,
+        y,
+      ));
+    }
+  }
+
+  return objects;
+}
+
+function buildMidpoints(values: number[]): number[] {
+  const midpoints: number[] = [];
+  for (let i = 0; i < values.length - 1; i++) {
+    midpoints.push((values[i] + values[i + 1]) * 0.5);
+  }
+  return midpoints;
 }
 
 function createBoxModel(

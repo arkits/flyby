@@ -288,30 +288,36 @@ function createFaultOverlay(shell: HTMLElement, host: HTMLElement, runtime: Runt
       </div>
       <p class="fault-card__message"></p>
       <p class="fault-card__hint"></p>
-      <div class="fault-card__meta">
-        <div class="fault-card__meta-item">
-          <span>Stage</span>
-          <strong data-field="stage"></strong>
-        </div>
-        <div class="fault-card__meta-item">
-          <span>Mode</span>
-          <strong data-field="mode"></strong>
-        </div>
-        <div class="fault-card__meta-item">
-          <span>Map</span>
-          <strong data-field="map"></strong>
-        </div>
-        <div class="fault-card__meta-item">
-          <span>Code</span>
-          <strong data-field="code"></strong>
-        </div>
+      <div class="fault-card__warning">
+        <span class="fault-card__warning-label">Emergency Shutdown</span>
+        <strong class="fault-card__warning-text">Renderer startup aborted. Containment lock engaged until the runtime is rebooted.</strong>
       </div>
-      <div class="fault-card__actions">
-        <button type="button" class="fault-card__button is-primary" data-action="reload">Restart Renderer</button>
-        <button type="button" class="fault-card__button" data-action="copy">Copy Report</button>
-        <button type="button" class="fault-card__button" data-action="toggle">Show Diagnostics</button>
+      <div class="fault-card__footer">
+        <div class="fault-card__meta">
+          <div class="fault-card__meta-item">
+            <span>Stage</span>
+            <strong data-field="stage"></strong>
+          </div>
+          <div class="fault-card__meta-item">
+            <span>Mode</span>
+            <strong data-field="mode"></strong>
+          </div>
+          <div class="fault-card__meta-item">
+            <span>Map</span>
+            <strong data-field="map"></strong>
+          </div>
+          <div class="fault-card__meta-item">
+            <span>Code</span>
+            <strong data-field="code"></strong>
+          </div>
+        </div>
+        <div class="fault-card__actions">
+          <button type="button" class="fault-card__button is-primary" data-action="reload">Restart Renderer</button>
+          <button type="button" class="fault-card__button" data-action="copy">Copy Report</button>
+          <button type="button" class="fault-card__button" data-action="toggle">Show Diagnostics</button>
+        </div>
+        <pre class="fault-card__details" hidden></pre>
       </div>
-      <pre class="fault-card__details" hidden></pre>
     </div>
   `;
   host.appendChild(overlay);
@@ -614,6 +620,7 @@ async function main(): Promise<void> {
         targetVecMatrix: { x: 0, y: 0, z: 0 },
         targetScreen: null,
         projectionMag: 0,
+        cameraPos: { x: 0, y: 0, z: 0 },
         objectRegion: '-',
         eyeRegion: '-',
         objectElevation: '-',
@@ -632,6 +639,9 @@ async function main(): Promise<void> {
         lastX: 0,
         lastY: 0,
       },
+      cameraView: 'director',
+      topDownMode: 'follow',
+      topDownAnchor: null,
 
       // Maneuver state
       show: { aircraft: 0 },

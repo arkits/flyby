@@ -2,7 +2,8 @@
 // Ported from FLYBY.C
 
 import type {
-  PosAtt, AppState, ManeuverState, GpuSrf, GpuField, ManeuverKey, Vec3, DebugPanelRefs, TelemetrySample, MapVariant, WorldSnapshot,
+  PosAtt, AppState, ManeuverState, GpuSrf, GpuField, ManeuverKey, Vec3,
+  DebugPanelRefs, TelemetrySample, MapVariant, WorldSnapshot, FlybyCameraView, FlybyTopDownMode,
 } from './types';
 import {
   vec3, subV3, rotLtoG, vectorToHeadPitch, pitchUp, sin16, cos16,
@@ -42,12 +43,26 @@ const MANEUVER_OPTIONS: Array<{ key: ManeuverKey; label: string }> = [
   { key: 'eight', label: 'Figure Eight' },
   { key: 'turn360', label: '360 Turn' },
 ];
+const CAMERA_VIEW_OPTIONS: Array<{ key: FlybyCameraView; label: string }> = [
+  { key: 'director', label: 'Director' },
+  { key: 'thirdPerson', label: 'Third Person' },
+  { key: 'topDown', label: 'Top Down' },
+];
+const TOP_DOWN_MODE_OPTIONS: Array<{ key: FlybyTopDownMode; label: string }> = [
+  { key: 'follow', label: 'Follow' },
+  { key: 'static', label: 'Static' },
+];
+const THIRD_PERSON_DISTANCE = 38;
+const THIRD_PERSON_HEIGHT = 10;
+const TOP_DOWN_HEIGHT = 320;
 const CAPTURE_REFERENCE_POINTS: { label: string; point: Vec3 }[] = [
   { label: 'rw1', point: vec3(92.86, 0, 19.84) },
   { label: 'rw2', point: vec3(199.06, 0, -98.37) },
   { label: 'sig1', point: vec3(148.56, 0, 1483.84) },
   { label: 'sig2', point: vec3(43.85, 0, 1483.97) },
 ];
+const RANDOMIZED_AIRCRAFT_LABEL = 'Randomized pool';
+const RANDOMIZED_MANEUVER_LABEL = 'Randomized program';
 
 function fmtVec(v: PosAtt['p']): string {
   return `${v.x.toFixed(1)} ${v.y.toFixed(1)} ${v.z.toFixed(1)}`;
@@ -102,6 +117,31 @@ function getAircraftLabel(state: AppState): string {
 
 function getManeuverLabel(key: ManeuverKey | null): string {
   return MANEUVER_OPTIONS.find((option) => option.key === key)?.label ?? 'Randomized Program';
+}
+
+function updateRandomizedSelectionStatus(state: AppState, panel: DebugPanelRefs): void {
+  const showAircraftStatus = state.runtime.forcedAircraftIndex === null;
+  panel.aircraftRandomStatus.hidden = !showAircraftStatus;
+  panel.aircraftRandomStatus.textContent = showAircraftStatus
+    ? `This scene: ${getAircraftLabel(state)}`
+    : '';
+
+  const showManeuverStatus = state.runtime.forcedManeuver === null && state.currentManeuverKey !== null;
+  panel.maneuverRandomStatus.hidden = !showManeuverStatus;
+  panel.maneuverRandomStatus.textContent = showManeuverStatus
+    ? `This scene: ${getManeuverLabel(state.currentManeuverKey)}`
+    : '';
+}
+
+function getTopDownModeLabel(mode: FlybyTopDownMode): string {
+  return TOP_DOWN_MODE_OPTIONS.find((option) => option.key === mode)?.label ?? 'Follow';
+}
+
+function getCameraViewLabel(state: AppState): string {
+  const base = CAMERA_VIEW_OPTIONS.find((option) => option.key === state.cameraView)?.label ?? 'Director';
+  return state.cameraView === 'topDown'
+    ? `${base} ${getTopDownModeLabel(state.topDownMode)}`
+    : base;
 }
 
 function getManeuverMetric(maneuver: ManeuverState | null): string {
@@ -187,6 +227,82 @@ function clonePosAtt(posAtt: PosAtt): PosAtt {
   };
 }
 
+function addOffsetFromAttitude(origin: PosAtt, offset: Vec3): Vec3 {
+  const worldOffset = vec3(0, 0, 0);
+  rotLtoG(worldOffset, offset, origin.a);
+  return {
+    x: origin.p.x + worldOffset.x,
+    y: origin.p.y + worldOffset.y,
+    z: origin.p.z + worldOffset.z,
+  };
+}
+
+function resolveDirectorCamera(state: AppState): PosAtt {
+  const renderEye = clonePosAtt(state.eye);
+  if (state.currentManeuver?.type === 'AHEAD') {
+    const maxAheadVerticalOffset = 28;
+    renderEye.p.y = Math.max(
+      state.obj.p.y - maxAheadVerticalOffset,
+      Math.min(state.obj.p.y + maxAheadVerticalOffset, renderEye.p.y),
+    );
+  }
+
+  const vec = subV3(state.obj.p, renderEye.p);
+  vectorToHeadPitch(renderEye.a, vec);
+  renderEye.a.h = wrapAngle16(renderEye.a.h + state.cameraPan.heading);
+  renderEye.a.p = clampCameraPitch(renderEye.a.p + state.cameraPan.pitch);
+  return renderEye;
+}
+
+function resolveThirdPersonCamera(state: AppState): PosAtt {
+  const renderEye: PosAtt = {
+    p: addOffsetFromAttitude(
+      state.obj,
+      vec3(0, THIRD_PERSON_HEIGHT, -THIRD_PERSON_DISTANCE),
+    ),
+    a: {
+      h: wrapAngle16(state.obj.a.h + state.cameraPan.heading),
+      p: state.obj.a.p + state.cameraPan.pitch,
+      b: state.obj.a.b,
+    },
+  };
+  return renderEye;
+}
+
+function currentFollowTopDownPosition(state: AppState): Vec3 {
+  return {
+    x: state.obj.p.x,
+    y: state.obj.p.y + TOP_DOWN_HEIGHT,
+    z: state.obj.p.z,
+  };
+}
+
+function resolveTopDownCamera(state: AppState): PosAtt {
+  const anchor = state.topDownMode === 'static' ? state.topDownAnchor : null;
+  const renderEye: PosAtt = {
+    p: anchor ?? currentFollowTopDownPosition(state),
+    a: { h: 0, p: 0, b: 0 },
+  };
+  vectorToHeadPitch(renderEye.a, subV3(state.obj.p, renderEye.p));
+  return renderEye;
+}
+
+function latchTopDownAnchor(state: AppState): void {
+  state.topDownAnchor = currentFollowTopDownPosition(state);
+}
+
+function resolveRenderCamera(state: AppState): PosAtt {
+  switch (state.cameraView) {
+    case 'thirdPerson':
+      return resolveThirdPersonCamera(state);
+    case 'topDown':
+      return resolveTopDownCamera(state);
+    case 'director':
+    default:
+      return resolveDirectorCamera(state);
+  }
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -246,6 +362,12 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   const maneuverOptions = MANEUVER_OPTIONS
     .map((option) => `<option value="${option.key}">${option.label}</option>`)
     .join('');
+  const cameraViewOptions = CAMERA_VIEW_OPTIONS
+    .map((option) => `<option value="${option.key}">${option.label}</option>`)
+    .join('');
+  const topDownModeOptions = TOP_DOWN_MODE_OPTIONS
+    .map((option) => `<option value="${option.key}">${option.label}</option>`)
+    .join('');
   const mapOptions = `
     <option value="airport">Airport</option>
     <option value="airport-improved">Airport Improved</option>
@@ -291,16 +413,18 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
         <label class="debug-console__control">
           <span>Aircraft</span>
           <select data-control="aircraft">
-            <option value="random">Randomized pool</option>
+            <option value="random">${RANDOMIZED_AIRCRAFT_LABEL}</option>
             ${aircraftOptions}
           </select>
+          <div class="debug-console__control-status" data-value="aircraft-random-status" hidden></div>
         </label>
         <label class="debug-console__control">
           <span>Maneuver</span>
           <select data-control="maneuver">
-            <option value="random">Randomized program</option>
+            <option value="random">${RANDOMIZED_MANEUVER_LABEL}</option>
             ${maneuverOptions}
           </select>
+          <div class="debug-console__control-status" data-value="maneuver-random-status" hidden></div>
         </label>
       </div>
       <button type="button" class="debug-console__randomize" data-control="randomize">Randomize Aircraft + Maneuver</button>
@@ -350,7 +474,21 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
       </div>
     </div>
     <div class="debug-console__section">
-      <div class="debug-console__section-title">Camera Trim</div>
+      <div class="debug-console__section-title">Camera View</div>
+      <div class="debug-console__controls">
+        <label class="debug-console__control">
+          <span>View</span>
+          <select data-control="camera-view">
+            ${cameraViewOptions}
+          </select>
+        </label>
+        <label class="debug-console__control">
+          <span>Top Down</span>
+          <select data-control="top-down-mode">
+            ${topDownModeOptions}
+          </select>
+        </label>
+      </div>
       <div class="debug-console__camera-grid">
         <label class="debug-console__slider-control">
           <div class="debug-console__slider-head">
@@ -431,6 +569,7 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
         <span>dt</span><span data-value="dt">0.0 ms</span>
         <span>plane pos</span><span data-value="plane-pos">-</span>
         <span>camera pos</span><span data-value="camera-pos">-</span>
+        <span>view</span><span data-value="view">-</span>
         <span>obj scr</span><span data-value="screen">-</span>
         <span>regions</span><span data-value="regions">-</span>
         <span>elevation</span><span data-value="elevation">-</span>
@@ -447,6 +586,10 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
     mapSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="map"]'),
     aircraftSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="aircraft"]'),
     maneuverSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="maneuver"]'),
+    aircraftRandomStatus: queryElement<HTMLDivElement>(state.debugOverlay, '[data-value="aircraft-random-status"]'),
+    maneuverRandomStatus: queryElement<HTMLDivElement>(state.debugOverlay, '[data-value="maneuver-random-status"]'),
+    cameraViewSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="camera-view"]'),
+    topDownModeSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="top-down-mode"]'),
     randomizeButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="randomize"]'),
     previousManeuverButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="previous-maneuver"]'),
     pauseButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="pause"]'),
@@ -475,6 +618,7 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
       dt: queryElement(state.debugOverlay, '[data-value="dt"]'),
       planePos: queryElement(state.debugOverlay, '[data-value="plane-pos"]'),
       cameraPos: queryElement(state.debugOverlay, '[data-value="camera-pos"]'),
+      view: queryElement(state.debugOverlay, '[data-value="view"]'),
       screen: queryElement(state.debugOverlay, '[data-value="screen"]'),
       regions: queryElement(state.debugOverlay, '[data-value="regions"]'),
       elevation: queryElement(state.debugOverlay, '[data-value="elevation"]'),
@@ -507,6 +651,9 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
     ? 'random'
     : String(Math.max(0, Math.min(state.aircraftLabels.length - 1, Math.floor(state.runtime.forcedAircraftIndex))));
   panel.maneuverSelect.value = state.runtime.forcedManeuver ?? 'random';
+  updateRandomizedSelectionStatus(state, panel);
+  panel.cameraViewSelect.value = state.cameraView;
+  panel.topDownModeSelect.value = state.topDownMode;
   panel.cameraPanRange.value = cameraPanDegrees(state).toFixed(0);
   panel.cameraTiltRange.value = cameraTiltDegrees(state).toFixed(0);
   panel.cameraZoomRange.value = state.cameraPan.zoom.toFixed(2);
@@ -525,6 +672,20 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
       ? null
       : panel.maneuverSelect.value as ManeuverKey;
     requestShowRestart(state);
+  });
+  panel.cameraViewSelect.addEventListener('change', () => {
+    state.cameraView = panel.cameraViewSelect.value as FlybyCameraView;
+    if (state.cameraView === 'topDown' && state.topDownMode === 'static') {
+      latchTopDownAnchor(state);
+    }
+  });
+  panel.topDownModeSelect.addEventListener('change', () => {
+    state.topDownMode = panel.topDownModeSelect.value as FlybyTopDownMode;
+    if (state.topDownMode === 'static') {
+      latchTopDownAnchor(state);
+    } else {
+      state.topDownAnchor = null;
+    }
   });
   panel.randomizeButton.addEventListener('click', () => {
     state.runtime.forcedAircraftIndex = null;
@@ -654,9 +815,9 @@ function createSparklinePath(samples: TelemetrySample[], key: typeof TELEMETRY_C
 
 function recordTelemetrySample(state: AppState): void {
   const range = Math.hypot(
-    state.obj.p.x - state.eye.p.x,
-    state.obj.p.y - state.eye.p.y,
-    state.obj.p.z - state.eye.p.z,
+    state.obj.p.x - state.renderDebug.cameraPos.x,
+    state.obj.p.y - state.renderDebug.cameraPos.y,
+    state.obj.p.z - state.renderDebug.cameraPos.z,
   );
   const overallProgress = state.showSnapshot
     ? clamp01(state.currentTime / Math.max(state.showSnapshot.totalDuration, SIMULATION_STEP))
@@ -710,22 +871,30 @@ function updateDebugOverlay(state: AppState, dt: number): void {
   panel.pauseButton.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
   panel.pauseButton.setAttribute('aria-label', state.paused ? 'Resume render' : 'Pause render');
   panel.pauseButton.setAttribute('title', state.paused ? 'Resume render' : 'Pause render');
+  panel.cameraViewSelect.value = state.cameraView;
+  panel.topDownModeSelect.value = state.topDownMode;
+  panel.topDownModeSelect.disabled = state.cameraView !== 'topDown';
   const currentPanDeg = cameraPanDegrees(state);
   const currentTiltDeg = cameraTiltDegrees(state);
+  const topDownView = state.cameraView === 'topDown';
+  panel.cameraPanRange.disabled = topDownView;
+  panel.cameraTiltRange.disabled = topDownView;
   panel.cameraPanRange.value = currentPanDeg.toFixed(0);
   panel.cameraTiltRange.value = currentTiltDeg.toFixed(0);
   panel.cameraZoomRange.value = state.cameraPan.zoom.toFixed(2);
-  panel.cameraPanValue.textContent = `${fmtSigned(currentPanDeg)} deg`;
-  panel.cameraTiltValue.textContent = `${fmtSigned(currentTiltDeg)} deg`;
+  panel.cameraPanValue.textContent = topDownView ? 'fixed' : `${fmtSigned(currentPanDeg)} deg`;
+  panel.cameraTiltValue.textContent = topDownView ? 'fixed' : `${fmtSigned(currentTiltDeg)} deg`;
   panel.cameraZoomValue.textContent = `${state.cameraPan.zoom.toFixed(2)}x`;
   state.debugOverlay.classList.toggle('is-paused', state.paused);
 
   panel.values.aircraft.textContent = getAircraftLabel(state);
   panel.values.maneuver.textContent = getManeuverLabel(state.currentManeuverKey);
+  updateRandomizedSelectionStatus(state, panel);
   panel.values.fps.textContent = state.fps.toFixed(1);
   panel.values.dt.textContent = `${(dt * 1000).toFixed(1)} ms`;
   panel.values.planePos.textContent = fmtVec(state.obj.p);
-  panel.values.cameraPos.textContent = fmtVec(state.eye.p);
+  panel.values.cameraPos.textContent = fmtVec(state.renderDebug.cameraPos);
+  panel.values.view.textContent = getCameraViewLabel(state);
   panel.values.screen.textContent = screenText;
   panel.values.regions.textContent = `${state.renderDebug.objectRegion} / ${state.renderDebug.eyeRegion}`;
   panel.values.elevation.textContent = state.renderDebug.objectElevation;
@@ -1053,6 +1222,9 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
     }
     : null;
   beginManeuverEffects(state.currentManeuver, state);
+  if (state.cameraView === 'topDown' && state.topDownMode === 'static') {
+    latchTopDownAnchor(state);
+  }
   lastTime = 0;
   timeAccumulator = 0;
 }
@@ -1169,23 +1341,10 @@ function drawScreen(
     state.helpOverlay.classList.remove('is-visible');
   }
 
-  const renderEye: PosAtt = {
-    p: { ...state.eye.p },
-    a: { ...state.eye.a },
-  };
-  if (state.currentManeuver?.type === 'AHEAD') {
-    const maxAheadVerticalOffset = 28;
-    renderEye.p.y = Math.max(
-      state.obj.p.y - maxAheadVerticalOffset,
-      Math.min(state.obj.p.y + maxAheadVerticalOffset, renderEye.p.y),
-    );
-  }
-
+  const renderEye = resolveRenderCamera(state);
   const vec = subV3(state.obj.p, renderEye.p);
-  vectorToHeadPitch(renderEye.a, vec);
-  renderEye.a.h += state.cameraPan.heading;
-  renderEye.a.p = clampCameraPitch(renderEye.a.p + state.cameraPan.pitch);
   state.renderDebug.targetVecWorld = { ...vec };
+  state.renderDebug.cameraPos = { ...renderEye.p };
 
   const cameraVec = vec3(0, 0, 0);
   const prj = getStdProjection(state.canvas.width, state.canvas.height);
@@ -1208,7 +1367,7 @@ function drawScreen(
   }
   const rootPos = { p: vec3(0, 0, 0), a: { h: 0, p: 0, b: 0 } };
   const objRegion = getFieldRegion(state.field, rootPos, state.obj.p);
-  const eyeRegion = getFieldRegion(state.field, rootPos, state.eye.p);
+  const eyeRegion = getFieldRegion(state.field, rootPos, renderEye.p);
   const objElevation = getFieldElevation(state.field, rootPos, state.obj.p, state.obj.a.h);
   const objCollision = getFieldSrfCollision(state.field, rootPos, state.obj.p, 0);
   const referenceScreens: string[] = [];
@@ -1280,6 +1439,8 @@ function drawScreen(
     aircraftIndex: state.show.aircraft,
     maneuver: state.currentManeuver?.type ?? null,
     smokeType: state.config.smokeType,
+    cameraView: state.cameraView,
+    topDownMode: state.topDownMode,
     object: { position: state.obj.p, attitude: state.obj.a },
     eye: { position: renderEye.p, attitude: renderEye.a },
     cameraTrim: {

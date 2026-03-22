@@ -9,7 +9,8 @@ includes browser-only control and capture features:
 
 - deterministic query-parameter scenarios (`runway`, `signal`, `smoke_*`)
 - seeded runtime selection
-- a debug HUD with maneuver seeking and camera trim
+- a debug HUD with maneuver seeking, camera trim, and selectable debug views
+  (`Director`, `Third Person`, `Top Down Follow`, `Top Down Static`)
 - map switching between raw browser variants
 
 Timing status:
@@ -201,6 +202,13 @@ function updateCamera(eye: PosAtt, obj: PosAtt): void {
   // eye.a.b remains unchanged (no roll on camera)
 }
 ```
+
+Browser adaptation note:
+
+- the parity target remains the default `Director` camera above
+- `Third Person`, `Top Down Follow`, and `Top Down Static` are debug-only
+  browser views layered in the render path for inspection; they are not claims
+  about the original `FLYBY.C` camera behavior
 
 ## Frame Timing (FLYBY.C:432-450)
 
