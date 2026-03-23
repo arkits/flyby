@@ -1187,6 +1187,8 @@ export function mapVariantId(environment: MapEnvironment): number {
       return 2;
     case "downtown":
       return 3;
+    case "san-francisco":
+      return 4;
     case "airport":
     default:
       return 0;

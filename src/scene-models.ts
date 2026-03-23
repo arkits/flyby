@@ -140,8 +140,10 @@ export function createWindowedBoxModel(
     createPolygon([2, 3, 7, 6], vec3(0, 1, 0), vec3(0, height, 0), roofColor),
   ];
 
-  const step = windowHeight + gapHeight;
   const windowGapX = 3.5;
+  const facadeInset = 0.08;
+  const minGapY = Math.max(0.9, gapHeight * 0.3);
+  const preferredGapY = Math.max(1.8, gapHeight);
   let vi = vertices.length;
 
   const addWindow = (
@@ -163,60 +165,87 @@ export function createWindowedBoxModel(
     vi += 4;
   };
 
-  for (let i = 0; i < windowCount; i++) {
-    const y0 = gapHeight + i * step;
+  const fillRows = Math.max(
+    1,
+    Math.floor((Math.max(windowHeight, height) + preferredGapY) / (windowHeight + preferredGapY))
+  );
+  const maxRows = Math.max(1, Math.floor((height + minGapY) / (windowHeight + minGapY)));
+  const rowCount = Math.min(maxRows, Math.max(windowCount, fillRows));
+  const actualGapY = Math.max(minGapY, (height - rowCount * windowHeight) / (rowCount + 1));
+
+  const computeColumns = (span: number): { count: number; gap: number } => {
+    const count = Math.max(2, Math.floor((span + windowGapX) / (windowWidth + windowGapX)));
+    return {
+      count,
+      gap: Math.max(1.2, (span - count * windowWidth) / (count + 1)),
+    };
+  };
+
+  const zColumns = computeColumns(width);
+  const xColumns = computeColumns(depth);
+
+  for (let i = 0; i < rowCount; i++) {
+    const y0 = actualGapY + i * (windowHeight + actualGapY);
     const y1 = y0 + windowHeight;
-    if (y1 > height - gapHeight) break;
+    if (y1 > height - actualGapY + 0.001) break;
 
-    // Calculate columns for Z axis (front and back faces)
-    const maxColsZ = Math.max(2, Math.floor(width / (windowWidth + windowGapX)));
-    const colsZ = maxColsZ >= 2 ? maxColsZ : 2;
-    const actualGapZ = colsZ >= 2 ? Math.max(0, (width - colsZ * windowWidth) / (colsZ + 1)) : 0;
-    const spacingZ = windowWidth + actualGapZ;
-    for (let col = 0; col < colsZ; col++) {
-      const x0 = -width * 0.5 + actualGapZ + col * spacingZ;
-      const x1 = x0 + windowWidth;
-      addWindow(y0, y1, x0, x1, hz, hz, vec3(0, 0, 1), vec3((x0 + x1) * 0.5, (y0 + y1) * 0.5, hz));
-    }
-
-    for (let col = 0; col < colsZ; col++) {
-      const x0 = -width * 0.5 + actualGapZ + col * spacingZ;
+    for (let col = 0; col < zColumns.count; col++) {
+      const x0 = -width * 0.5 + zColumns.gap + col * (windowWidth + zColumns.gap);
       const x1 = x0 + windowWidth;
       addWindow(
         y0,
         y1,
         x0,
         x1,
-        -hz,
-        -hz,
-        vec3(0, 0, -1),
-        vec3((x0 + x1) * 0.5, (y0 + y1) * 0.5, -hz)
+        hz + facadeInset,
+        hz + facadeInset,
+        vec3(0, 0, 1),
+        vec3((x0 + x1) * 0.5, (y0 + y1) * 0.5, hz + facadeInset)
       );
     }
 
-    // Calculate columns for X axis (left and right faces)
-    const maxColsX = Math.max(2, Math.floor(depth / (windowWidth + windowGapX)));
-    const colsX = maxColsX >= 2 ? maxColsX : 2;
-    const actualGapX = colsX >= 2 ? Math.max(0, (depth - colsX * windowWidth) / (colsX + 1)) : 0;
-    const spacingX = windowWidth + actualGapX;
-    for (let col = 0; col < colsX; col++) {
-      const z0 = -depth * 0.5 + actualGapX + col * spacingX;
-      const z1 = z0 + windowWidth;
-      addWindow(y0, y1, hx, hx, z0, z1, vec3(1, 0, 0), vec3(hx, (y0 + y1) * 0.5, (z0 + z1) * 0.5));
+    for (let col = 0; col < zColumns.count; col++) {
+      const x0 = -width * 0.5 + zColumns.gap + col * (windowWidth + zColumns.gap);
+      const x1 = x0 + windowWidth;
+      addWindow(
+        y0,
+        y1,
+        x0,
+        x1,
+        -hz - facadeInset,
+        -hz - facadeInset,
+        vec3(0, 0, -1),
+        vec3((x0 + x1) * 0.5, (y0 + y1) * 0.5, -hz - facadeInset)
+      );
     }
 
-    for (let col = 0; col < colsX; col++) {
-      const z0 = -depth * 0.5 + actualGapX + col * spacingX;
+    for (let col = 0; col < xColumns.count; col++) {
+      const z0 = -depth * 0.5 + xColumns.gap + col * (windowWidth + xColumns.gap);
       const z1 = z0 + windowWidth;
       addWindow(
         y0,
         y1,
-        -hx,
-        -hx,
+        hx + facadeInset,
+        hx + facadeInset,
+        z0,
+        z1,
+        vec3(1, 0, 0),
+        vec3(hx + facadeInset, (y0 + y1) * 0.5, (z0 + z1) * 0.5)
+      );
+    }
+
+    for (let col = 0; col < xColumns.count; col++) {
+      const z0 = -depth * 0.5 + xColumns.gap + col * (windowWidth + xColumns.gap);
+      const z1 = z0 + windowWidth;
+      addWindow(
+        y0,
+        y1,
+        -hx - facadeInset,
+        -hx - facadeInset,
         z0,
         z1,
         vec3(-1, 0, 0),
-        vec3(-hx, (y0 + y1) * 0.5, (z0 + z1) * 0.5)
+        vec3(-hx - facadeInset, (y0 + y1) * 0.5, (z0 + z1) * 0.5)
       );
     }
   }

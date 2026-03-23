@@ -129,6 +129,22 @@ fn nightStar(dir: vec3f) -> f32 {
   return presence * (core + halo) * brightness;
 }
 
+fn nightDenseStar(dir: vec3f) -> f32 {
+  let uv = angularSkyUv(dir, vec2f(760.0, 340.0));
+  let cell = floor(uv);
+  let center = vec2f(
+    0.16 + hash21(cell + vec2f(19.7, 5.4)) * 0.68,
+    0.16 + hash21(cell + vec2f(47.2, 13.1)) * 0.68,
+  );
+  let delta = fract(uv) - center;
+  let radius = length(delta);
+  let presence = step(0.99855, hash21(cell + vec2f(63.0, 27.0)));
+  let core = smoothstep(0.045, 0.0, radius);
+  let halo = smoothstep(0.1, 0.0, radius) * 0.18;
+  let brightness = 0.16 + 0.26 * hash21(cell + vec2f(11.0, 37.0));
+  return presence * (core + halo) * brightness;
+}
+
 fn nightMoon(dir: vec3f) -> vec3f {
   let moonDir = normalize(vec3f(0.35, 0.48, -0.8));
   let moonDot = max(dot(dir, moonDir), 0.0);
@@ -229,9 +245,17 @@ fn emissiveOverlayColor(baseColor: vec3f, worldPos: vec3f) -> vec3f {
   let diffuse = max(dot(N, L), 0.0) * u.keyLightDir.w;
   let pavedMix = smoothstep(0.08, 0.42, 1.0 - luminance(baseColor));
   let shadedBase = baseColor * (hemiAmbient(N) + diffuse * u.keyLightColor.xyz * mix(0.45, 0.8, pavedMix));
-  let hot = smoothstep(u.emissiveParams.y, 1.0, luminance(baseColor));
-  let accent = mix(baseColor, max(baseColor, u.emissiveColor.xyz), u.emissiveParams.z);
-  let color = mix(shadedBase, baseColor + accent * (hot * u.emissiveParams.x), hot);
+  let luma = luminance(baseColor);
+  let maxChannel = max(baseColor.x, max(baseColor.y, baseColor.z));
+  let minChannel = min(baseColor.x, min(baseColor.y, baseColor.z));
+  let chroma = maxChannel - minChannel;
+  let lumaHot = smoothstep(u.emissiveParams.y, 1.0, luma);
+  let spectralHot = smoothstep(u.emissiveParams.y * 0.44, 1.0, maxChannel) * smoothstep(0.1, 0.55, chroma);
+  let hot = max(lumaHot, spectralHot);
+  let accentMix = saturate(u.emissiveParams.z + chroma * 0.28);
+  let accent = mix(baseColor, max(baseColor, u.emissiveColor.xyz), accentMix);
+  let flare = hot * (u.emissiveParams.x + spectralHot * 0.26);
+  let color = mix(shadedBase, baseColor + accent * flare, hot);
   return applyFog(color, worldPos, hot * u.emissiveParams.x);
 }
 
@@ -250,7 +274,18 @@ fn groundMaterial(worldPos: vec3f) -> vec3f {
   let mapId = u.groundParamsB.z;
   let pavedSeed = saturate(detail * 0.45 + patchNoise * 0.35 + coarse * 0.2);
   let pavedMask = smoothstep(u.groundParamsB.x - 0.15, u.groundParamsB.x + 0.15, pavedSeed);
-  if (mapId > 2.5) {
+  if (mapId > 3.5) {
+    let micro = noise2((p + vec2f(detail * 37.0, coarse * -23.0)) * (u.groundParamsA.x * 5.5));
+    let grit = noise2((p + vec2f(140.0, -92.0)) * (u.groundParamsA.x * 9.0));
+    let aggregate = saturate(coarse * 0.46 + patchNoise * 0.34 + detail * 0.2);
+    let parcelUv = abs(fract((p + vec2f(84.0, -32.0)) * (u.groundParamsA.z * 0.18)) - 0.5);
+    let seam = 1.0 - smoothstep(0.45, 0.5, max(parcelUv.x, parcelUv.y));
+    let concrete = mix(u.groundPavedColor.xyz, u.groundSecondaryColor.xyz, aggregate * 0.32 + 0.18);
+    base = mix(base, concrete, 0.82);
+    base = mix(base, u.groundPrimaryColor.xyz, smoothstep(0.62, 0.92, aggregate) * 0.2);
+    base += vec3f(micro * 0.032 + grit * 0.028);
+    base = mix(base, u.groundPavedColor.xyz * 0.92, seam * 0.04);
+  } else if (mapId > 2.5) {
     base = mix(base, u.groundPavedColor.xyz, pavedMask * 0.72);
   } else if (mapId > 1.5) {
     base = mix(base, u.groundPavedColor.xyz, pavedMask * 0.28);
@@ -438,11 +473,15 @@ fn fsSky(input: SkyVertexOutput) -> @location(0) vec4f {
     let haze = pow(1.0 - max(dir.y, 0.0), 2.2);
     color = mix(color, u.fogColor.xyz, haze * 0.36);
   } else if (skyMode > 0.5) {
+    let airportNightMask = step(1.5, mapId) * (1.0 - step(2.5, mapId));
     color += airportNightAurora(dir, cloudBand, mapId);
     let star = nightStar(dir);
     let starVisibility = (1.0 - cloudBand * 0.7) * smoothstep(-0.04, 0.18, dir.y);
     let starHue = mix(vec3f(1.0), vec3f(0.72, 0.84, 1.0), step(0.72, hash21(floor(angularSkyUv(dir, vec2f(420.0, 190.0))) + vec2f(53.0, 31.0))));
-    color += starHue * (star * starVisibility * 1.25);
+    color += starHue * (star * starVisibility * mix(1.25, 1.5, airportNightMask));
+    let denseStar = nightDenseStar(dir);
+    let denseHue = mix(vec3f(0.82, 0.9, 1.0), vec3f(1.0, 0.98, 0.92), step(0.64, hash21(floor(angularSkyUv(dir, vec2f(760.0, 340.0))) + vec2f(9.0, 73.0))));
+    color += denseHue * (denseStar * starVisibility * airportNightMask * 0.95);
     let fineUv = angularSkyUv(dir, vec2f(680.0, 310.0));
     let fineCell = floor(fineUv);
     let fineCenter = vec2f(
@@ -450,9 +489,9 @@ fn fsSky(input: SkyVertexOutput) -> @location(0) vec4f {
       0.22 + hash21(fineCell + vec2f(55.3, 19.8)) * 0.56,
     );
     let fineDelta = fract(fineUv) - fineCenter;
-    let finePresence = step(0.9996, hash21(fineCell + vec2f(37.0, 61.0)));
+    let finePresence = step(mix(0.9996, 0.9992, airportNightMask), hash21(fineCell + vec2f(37.0, 61.0)));
     let fineGlow = smoothstep(0.05, 0.0, length(fineDelta)) * (0.28 + 0.35 * hash21(fineCell + vec2f(43.0, 7.0)));
-    color += vec3f(finePresence * fineGlow * starVisibility * 0.55);
+    color += vec3f(finePresence * fineGlow * starVisibility * mix(0.55, 0.75, airportNightMask));
     if (mapId > 1.5 && mapId < 2.5) {
       color += nightMoon(dir);
     }

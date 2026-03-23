@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { colorFromRGB, vec3 } from "./math";
 import { enhanceDowntownField } from "./downtown-enhancement";
+import { enhanceSanFranciscoField } from "./san-francisco-enhancement";
 
 const FAR_LOD = 10000000;
 
@@ -34,11 +35,16 @@ interface AirportPalette {
   buildingRoofDark: Color;
   buildingWallLight: Color;
   buildingRoofLight: Color;
+  runwayPaintWhite: Color;
   markingWhite: Color;
   markingYellow: Color;
   lightBlue?: Color;
   lightAmber?: Color;
   lightWhite?: Color;
+  lightGreen?: Color;
+  lightRed?: Color;
+  distantWarm?: Color;
+  distantCool?: Color;
 }
 
 const AIRPORT_IMPROVED: AirportPalette = {
@@ -56,6 +62,7 @@ const AIRPORT_IMPROVED: AirportPalette = {
   buildingRoofDark: colorFromRGB(100, 108, 120),
   buildingWallLight: colorFromRGB(196, 188, 174),
   buildingRoofLight: colorFromRGB(158, 146, 132),
+  runwayPaintWhite: colorFromRGB(240, 240, 236),
   markingWhite: colorFromRGB(240, 240, 236),
   markingYellow: colorFromRGB(232, 194, 82),
 };
@@ -75,11 +82,16 @@ const AIRPORT_NIGHT: AirportPalette = {
   buildingRoofDark: colorFromRGB(42, 48, 58),
   buildingWallLight: colorFromRGB(118, 126, 138),
   buildingRoofLight: colorFromRGB(82, 90, 102),
-  markingWhite: colorFromRGB(204, 214, 224),
+  runwayPaintWhite: colorFromRGB(118, 126, 140),
+  markingWhite: colorFromRGB(156, 164, 176),
   markingYellow: colorFromRGB(228, 178, 68),
   lightBlue: colorFromRGB(112, 182, 255),
   lightAmber: colorFromRGB(255, 198, 92),
   lightWhite: colorFromRGB(248, 248, 255),
+  lightGreen: colorFromRGB(72, 255, 168),
+  lightRed: colorFromRGB(255, 92, 76),
+  distantWarm: colorFromRGB(255, 214, 146),
+  distantCool: colorFromRGB(162, 210, 255),
 };
 
 const AIRPORT_IMPROVED_TAG = "__browser_airport_improved_augmented__";
@@ -123,6 +135,7 @@ interface RoadStyle {
 export function resolveFieldFileForMap(defaultFieldFile: string, mapVariant: MapVariant): string {
   switch (mapVariant) {
     case "downtown":
+    case "san-francisco":
       return "downtown.fld";
     default:
       return defaultFieldFile;
@@ -130,6 +143,10 @@ export function resolveFieldFileForMap(defaultFieldFile: string, mapVariant: Map
 }
 
 export function enhanceFieldForMap(field: Field, fieldFile: string, mapVariant: MapVariant): Field {
+  if (mapVariant === "san-francisco") {
+    return enhanceSanFranciscoField(field);
+  }
+
   if (mapVariant === "downtown" || fieldFile.toLowerCase().endsWith("downtown.fld")) {
     return enhanceDowntownField(field);
   }
@@ -171,6 +188,9 @@ function enhanceAirportField(
   const baseSrf = options.showcaseDensity
     ? field.srf.filter((obj) => !isOriginalImprovedHangar(obj))
     : field.srf;
+  const basePc2 = options.includeNightLights
+    ? retintAirportNightRunwayPaint(field.pc2, palette)
+    : field.pc2;
   const pc2Entries = createAirportOverlayEntries(palette, tag, options);
   const srfEntries = createAirportBuildingEntries(field, palette, tag, options);
 
@@ -182,7 +202,7 @@ function enhanceAirportField(
       ...entry,
       ter: flattenAirportTerrain(entry.ter, palette),
     })),
-    pc2: [...field.pc2, ...pc2Entries],
+    pc2: [...basePc2, ...pc2Entries],
     srf: [...baseSrf, ...srfEntries],
   };
 }
@@ -272,27 +292,61 @@ function createAirportOverlayEntries(
 
   if (options.includeNightLights) {
     objects.push(
-      ...createRunwayLightObjects(92.81, 19.89, 0, 60, 3000, 120, palette.lightBlue!),
-      ...createRunwayLightObjects(199.58, -97.85, -9624, 60, 3000, 120, palette.lightBlue!),
-      ...createRunwayEndLightObjects(
+      ...createRunwayEdgeLightObjects(92.81, 19.89, 0, 60, 3000, 96, palette.lightAmber!),
+      ...createRunwayEdgeLightObjects(199.58, -97.85, -9624, 60, 3000, 96, palette.lightAmber!),
+      ...createRunwayThresholdLightObjects(
         92.81,
         19.89,
         0,
-        54,
-        1485,
-        palette.lightAmber!,
-        palette.lightWhite!
+        56,
+        1490,
+        palette.lightGreen!,
+        palette.lightRed!
       ),
-      ...createRunwayEndLightObjects(
+      ...createRunwayThresholdLightObjects(
         199.58,
         -97.85,
         -9624,
-        54,
-        1485,
-        palette.lightAmber!,
-        palette.lightWhite!
+        56,
+        1490,
+        palette.lightGreen!,
+        palette.lightRed!
       ),
-      ...createApronBeaconObjects(palette.lightAmber!, palette.lightWhite!)
+      ...createRunwayCenterlineLightObjects(92.81, 19.89, 0, 3000, 182, palette.lightWhite!),
+      ...createRunwayCenterlineLightObjects(199.58, -97.85, -9624, 3000, 182, palette.lightWhite!),
+      ...createTaxiwayLightObjects(
+        [
+          [
+            { x: -84, y: -92 },
+            { x: -48, y: -92 },
+            { x: -18, y: -32 },
+            { x: 18, y: 22 },
+            { x: 18, y: 320 },
+          ],
+          [
+            { x: 212, y: -150 },
+            { x: 244, y: -132 },
+            { x: 296, y: -100 },
+            { x: 324, y: -12 },
+            { x: 324, y: 98 },
+          ],
+        ],
+        48,
+        palette.lightBlue!
+      ),
+      ...createApproachLightBarObjects(-62, -108, palette.lightAmber!),
+      ...createApronBeaconObjects(
+        palette.lightAmber!,
+        palette.lightWhite!,
+        palette.lightBlue!,
+        palette.lightRed!
+      ),
+      ...createDistantLightFieldObjects(
+        palette.distantWarm!,
+        palette.distantCool!,
+        palette.lightRed!,
+        palette.lightWhite!
+      )
     );
   }
 
@@ -413,7 +467,12 @@ function createAirportBuildingEntries(
   }
 
   if (options.includeNightLights) {
-    const lightPole = createLightPoleModel(28, palette.lightAmber!, colorFromRGB(72, 76, 84));
+    const lightPole = createLightPoleModel(
+      28,
+      palette.lightAmber!,
+      colorFromRGB(72, 76, 84),
+      colorFromRGB(32, 36, 44)
+    );
     specs.push(
       {
         name: "light-pole-west-1",
@@ -517,6 +576,44 @@ function flattenAirportTerrain(terrain: Terrain, palette: AirportPalette): Terra
   };
 }
 
+function retintAirportNightRunwayPaint(entries: FieldPc2[], palette: AirportPalette): FieldPc2[] {
+  return entries.map((entry) => {
+    if (entry.fn.toLowerCase() !== "runway.pc2") {
+      return entry;
+    }
+
+    let changed = false;
+    const objects = entry.pc2.objects.map((obj) => {
+      if (!isBrightNeutralOverlay(obj.color)) {
+        return obj;
+      }
+      changed = true;
+      return {
+        ...obj,
+        color: palette.runwayPaintWhite,
+      };
+    });
+
+    if (!changed) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      pc2: {
+        ...entry.pc2,
+        objects,
+      },
+    };
+  });
+}
+
+function isBrightNeutralOverlay(color: Color): boolean {
+  const maxChannel = Math.max(color.r, color.g, color.b);
+  const minChannel = Math.min(color.r, color.g, color.b);
+  return maxChannel >= 0.94 && maxChannel - minChannel <= 0.05;
+}
+
 function createRunwayObjects(
   centerX: number,
   centerY: number,
@@ -536,7 +633,7 @@ function createRunwayObjects(
     const dash = rotatePoint({ x: 0, y: offset }, heading);
     objects.push(
       createRectangleObject(
-        palette.markingWhite,
+        palette.runwayPaintWhite,
         centerX + dash.x,
         centerY + dash.y,
         4,
@@ -552,7 +649,7 @@ function createRunwayObjects(
       const marker = rotatePoint({ x: offsetX, y: thresholdY }, heading);
       objects.push(
         createRectangleObject(
-          palette.markingWhite,
+          palette.runwayPaintWhite,
           centerX + marker.x,
           centerY + marker.y,
           5,
@@ -566,7 +663,7 @@ function createRunwayObjects(
   return objects;
 }
 
-function createRunwayLightObjects(
+function createRunwayEdgeLightObjects(
   centerX: number,
   centerY: number,
   heading: number,
@@ -577,61 +674,212 @@ function createRunwayLightObjects(
 ): Pc2Object[] {
   const objects: Pc2Object[] = [];
   const halfLength = length * 0.5;
-  const offsets = [-width * 0.5, 0, width * 0.5];
+  const offsets = [-width * 0.5, width * 0.5];
   for (const offsetX of offsets) {
-    for (let y = -halfLength; y <= halfLength; y += spacing) {
+    for (let y = -halfLength + 84; y <= halfLength - 84; y += spacing) {
       const light = rotatePoint({ x: offsetX, y }, heading);
       objects.push(
-        createRectangleObject(
-          color,
-          centerX + light.x,
-          centerY + light.y,
-          offsetX === 0 ? 4 : 7,
-          offsetX === 0 ? 4 : 7,
-          heading
-        )
+        ...createLightGlowStack(centerX + light.x, centerY + light.y, heading, color, 1)
       );
     }
   }
   return objects;
 }
 
-function createRunwayEndLightObjects(
+function createRunwayCenterlineLightObjects(
+  centerX: number,
+  centerY: number,
+  heading: number,
+  length: number,
+  spacing: number,
+  color: Color
+): Pc2Object[] {
+  const objects: Pc2Object[] = [];
+  const halfLength = length * 0.5;
+  for (let y = -halfLength + 180; y <= halfLength - 180; y += spacing) {
+    const light = rotatePoint({ x: 0, y }, heading);
+    objects.push(
+      ...createLightGlowStack(centerX + light.x, centerY + light.y, heading, color, 0.72)
+    );
+  }
+  return objects;
+}
+
+function createRunwayThresholdLightObjects(
   centerX: number,
   centerY: number,
   heading: number,
   width: number,
   endOffset: number,
-  edgeColor: Color,
-  centerColor: Color
+  thresholdColor: Color,
+  endColor: Color
 ): Pc2Object[] {
   const objects: Pc2Object[] = [];
+  const thresholdOffsets = createThresholdOffsets(width);
   for (const end of [-1, 1]) {
-    const centerYLocal = end * endOffset;
-    for (const offsetX of [-width * 0.35, -width * 0.1, width * 0.1, width * 0.35]) {
-      const light = rotatePoint({ x: offsetX, y: centerYLocal }, heading);
-      const color = Math.abs(offsetX) < width * 0.2 ? centerColor : edgeColor;
+    const thresholdYLocal = end * (endOffset - 18);
+    const endBarYLocal = end * (endOffset + 22);
+    for (const offsetX of thresholdOffsets) {
+      const thresholdLight = rotatePoint({ x: offsetX, y: thresholdYLocal }, heading);
       objects.push(
-        createRectangleObject(color, centerX + light.x, centerY + light.y, 7, 7, heading)
+        ...createLightGlowStack(
+          centerX + thresholdLight.x,
+          centerY + thresholdLight.y,
+          heading,
+          thresholdColor,
+          1.18
+        )
+      );
+
+      const endLight = rotatePoint({ x: offsetX, y: endBarYLocal }, heading);
+      objects.push(
+        ...createLightGlowStack(centerX + endLight.x, centerY + endLight.y, heading, endColor, 0.92)
       );
     }
   }
   return objects;
 }
 
-function createApronBeaconObjects(amber: Color, white: Color): Pc2Object[] {
+function createApproachLightBarObjects(
+  centerX: number,
+  centerY: number,
+  amber: Color
+): Pc2Object[] {
+  const points = [-28, -10, 8, 26];
+  return points.flatMap((offsetX) =>
+    createLightGlowStack(centerX + offsetX, centerY, 0, amber, 1.25)
+  );
+}
+
+function createApronBeaconObjects(
+  amber: Color,
+  white: Color,
+  blue: Color,
+  red: Color
+): Pc2Object[] {
   const points = [
-    { x: -150, y: -104, color: amber },
-    { x: -148, y: -28, color: amber },
-    { x: -146, y: 48, color: amber },
-    { x: -146, y: 126, color: amber },
-    { x: -144, y: 204, color: amber },
-    { x: 286, y: -150, color: white },
-    { x: 318, y: -112, color: white },
-    { x: 326, y: -12, color: white },
-    { x: 326, y: 66, color: white },
+    { x: -150, y: -104, color: amber, scale: 1.05 },
+    { x: -148, y: -28, color: amber, scale: 1.05 },
+    { x: -146, y: 48, color: amber, scale: 1.05 },
+    { x: -146, y: 126, color: amber, scale: 1.05 },
+    { x: -144, y: 204, color: amber, scale: 1.05 },
+    { x: 286, y: -150, color: white, scale: 1.0 },
+    { x: 318, y: -112, color: white, scale: 1.0 },
+    { x: 326, y: -12, color: white, scale: 1.0 },
+    { x: 326, y: 66, color: white, scale: 1.0 },
+    { x: -88, y: -118, color: blue, scale: 0.75 },
+    { x: 232, y: -196, color: red, scale: 0.82 },
   ];
-  return points.map((point) => createRectangleObject(point.color, point.x, point.y, 8, 8, 0));
+  return points.flatMap((point) =>
+    createLightGlowStack(point.x, point.y, 0, point.color, point.scale)
+  );
+}
+
+function createTaxiwayLightObjects(paths: Vec2[][], spacing: number, color: Color): Pc2Object[] {
+  return paths.flatMap((path) => createPolylineLightObjects(path, spacing, color, 0.72));
+}
+
+function createPolylineLightObjects(
+  vertices: Vec2[],
+  spacing: number,
+  color: Color,
+  scale: number
+): Pc2Object[] {
+  const objects: Pc2Object[] = [];
+  for (let i = 0; i < vertices.length - 1; i++) {
+    const from = vertices[i];
+    const to = vertices[i + 1];
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= 1) {
+      continue;
+    }
+    const steps = Math.max(1, Math.floor(length / spacing));
+    for (let step = 0; step <= steps; step++) {
+      const t = step / steps;
+      const x = from.x + dx * t;
+      const y = from.y + dy * t;
+      objects.push(...createLightGlowStack(x, y, 0, color, scale));
+    }
+  }
+  return objects;
+}
+
+function createDistantLightFieldObjects(
+  warm: Color,
+  cool: Color,
+  red: Color,
+  white: Color
+): Pc2Object[] {
+  const objects: Pc2Object[] = [];
+  const rows = [
+    { baseY: 1410, count: 26, startX: -360, stepX: 30, drift: 18, scale: 0.52 },
+    { baseY: 1560, count: 30, startX: -420, stepX: 28, drift: -12, scale: 0.48 },
+    { baseY: 1715, count: 34, startX: -520, stepX: 32, drift: 9, scale: 0.42 },
+  ];
+
+  for (const row of rows) {
+    for (let i = 0; i < row.count; i++) {
+      const wave = Math.sin(i * 1.73) * row.drift;
+      const x = row.startX + i * row.stepX + wave;
+      const y = row.baseY + Math.cos(i * 0.57) * 20;
+      const paletteIndex = i % 9;
+      const color =
+        paletteIndex === 0 ? white : paletteIndex === 3 ? cool : paletteIndex === 6 ? red : warm;
+      const scale = row.scale * (paletteIndex === 0 ? 1.18 : 1);
+      objects.push(...createLightGlowStack(x, y, 0, color, scale));
+    }
+  }
+
+  return objects;
+}
+
+function createThresholdOffsets(width: number): number[] {
+  const lightsPerSide = 4;
+  const usableWidth = width * 0.82;
+  const step = usableWidth / (lightsPerSide * 2 - 1);
+  const offsets: number[] = [];
+  for (let i = 0; i < lightsPerSide * 2; i++) {
+    offsets.push(-usableWidth * 0.5 + i * step);
+  }
+  return offsets;
+}
+
+function createLightGlowStack(
+  centerX: number,
+  centerY: number,
+  heading: number,
+  color: Color,
+  scale: number
+): Pc2Object[] {
+  const haloColor = mixColor(color, colorFromRGB(255, 248, 236), 0.28);
+  return [
+    createRectangleObject(
+      scaleColor(haloColor, 0.72),
+      centerX,
+      centerY,
+      10 * scale,
+      10 * scale,
+      heading
+    ),
+    createRectangleObject(
+      scaleColor(color, 0.96),
+      centerX,
+      centerY,
+      5.4 * scale,
+      5.4 * scale,
+      heading
+    ),
+    createRectangleObject(
+      scaleColor(color, 1),
+      centerX,
+      centerY,
+      2.4 * scale,
+      2.4 * scale,
+      heading
+    ),
+  ];
 }
 
 function createParkingPadObjects(
@@ -1036,40 +1284,59 @@ function createBoxModel(
   };
 }
 
-function createLightPoleModel(height: number, lampColor: Color, poleColor: Color): SrfModel {
-  const poleHalf = 0.9;
-  const lampHalf = 2.2;
-  const lampBase = height - 3;
-  const vertices: SrfVertex[] = [
-    createVertex(-poleHalf, 0, -poleHalf),
-    createVertex(poleHalf, 0, -poleHalf),
-    createVertex(poleHalf, height, -poleHalf),
-    createVertex(-poleHalf, height, -poleHalf),
-    createVertex(-poleHalf, 0, poleHalf),
-    createVertex(poleHalf, 0, poleHalf),
-    createVertex(poleHalf, height, poleHalf),
-    createVertex(-poleHalf, height, poleHalf),
-    createVertex(-lampHalf, lampBase, -lampHalf),
-    createVertex(lampHalf, lampBase, -lampHalf),
-    createVertex(lampHalf, height + 1.2, -lampHalf),
-    createVertex(-lampHalf, height + 1.2, -lampHalf),
-    createVertex(-lampHalf, lampBase, lampHalf),
-    createVertex(lampHalf, lampBase, lampHalf),
-    createVertex(lampHalf, height + 1.2, lampHalf),
-    createVertex(-lampHalf, height + 1.2, lampHalf),
-  ];
+function createLightPoleModel(
+  height: number,
+  lampColor: Color,
+  poleColor: Color,
+  hoodColor: Color
+): SrfModel {
+  const vertices: SrfVertex[] = [];
+  const polygons: SrfPolygon[] = [];
 
-  const polygons: SrfPolygon[] = [
-    createPolygon([0, 1, 2, 3], vec3(0, 0, -1), vec3(0, height * 0.5, -poleHalf), poleColor),
-    createPolygon([4, 5, 6, 7], vec3(0, 0, 1), vec3(0, height * 0.5, poleHalf), poleColor),
-    createPolygon([1, 5, 6, 2], vec3(1, 0, 0), vec3(poleHalf, height * 0.5, 0), poleColor),
-    createPolygon([0, 3, 7, 4], vec3(-1, 0, 0), vec3(-poleHalf, height * 0.5, 0), poleColor),
-    createPolygon([8, 9, 10, 11], vec3(0, 0, -1), vec3(0, height - 1.4, -lampHalf), lampColor, 2),
-    createPolygon([12, 13, 14, 15], vec3(0, 0, 1), vec3(0, height - 1.4, lampHalf), lampColor, 2),
-    createPolygon([9, 13, 14, 10], vec3(1, 0, 0), vec3(lampHalf, height - 1.4, 0), lampColor, 2),
-    createPolygon([8, 11, 15, 12], vec3(-1, 0, 0), vec3(-lampHalf, height - 1.4, 0), lampColor, 2),
-    createPolygon([11, 10, 14, 15], vec3(0, 1, 0), vec3(0, height + 1.2, 0), lampColor, 2),
-  ];
+  appendBox(vertices, polygons, {
+    center: vec3(0, height * 0.5, 0),
+    width: 0.8,
+    depth: 0.8,
+    height,
+    wallColor: poleColor,
+    roofColor: scaleColor(poleColor, 0.9),
+  });
+  appendBox(vertices, polygons, {
+    center: vec3(0, 1.2, 0),
+    width: 2.1,
+    depth: 2.1,
+    height: 0.7,
+    wallColor: scaleColor(poleColor, 0.82),
+    roofColor: scaleColor(poleColor, 0.7),
+  });
+  appendBox(vertices, polygons, {
+    center: vec3(0, height - 2.0, 0),
+    width: 7.4,
+    depth: 0.9,
+    height: 0.55,
+    wallColor: poleColor,
+    roofColor: scaleColor(poleColor, 0.75),
+  });
+
+  const lampOffsets = [-2.35, 0, 2.35];
+  for (const offsetX of lampOffsets) {
+    appendBox(vertices, polygons, {
+      center: vec3(offsetX, height - 2.6, 0.15),
+      width: 1.05,
+      depth: 1.35,
+      height: 0.7,
+      wallColor: hoodColor,
+      roofColor: scaleColor(hoodColor, 0.82),
+    });
+    appendEmitterPanel(
+      vertices,
+      polygons,
+      vec3(offsetX, height - 2.95, 0.15),
+      0.88,
+      0.92,
+      lampColor
+    );
+  }
 
   return {
     bbox: buildBoundingBox(vertices.map((vertex) => vertex.pos)),
@@ -1077,6 +1344,106 @@ function createLightPoleModel(height: number, lampColor: Color, poleColor: Color
     vertices,
     np: polygons.length,
     polygons,
+  };
+}
+
+function appendBox(
+  vertices: SrfVertex[],
+  polygons: SrfPolygon[],
+  spec: {
+    center: Vec3;
+    width: number;
+    depth: number;
+    height: number;
+    wallColor: Color;
+    roofColor: Color;
+  }
+): void {
+  const base = vertices.length;
+  const hx = spec.width * 0.5;
+  const hz = spec.depth * 0.5;
+  const hy = spec.height * 0.5;
+  vertices.push(
+    createVertex(spec.center.x - hx, spec.center.y - hy, spec.center.z - hz),
+    createVertex(spec.center.x + hx, spec.center.y - hy, spec.center.z - hz),
+    createVertex(spec.center.x + hx, spec.center.y + hy, spec.center.z - hz),
+    createVertex(spec.center.x - hx, spec.center.y + hy, spec.center.z - hz),
+    createVertex(spec.center.x - hx, spec.center.y - hy, spec.center.z + hz),
+    createVertex(spec.center.x + hx, spec.center.y - hy, spec.center.z + hz),
+    createVertex(spec.center.x + hx, spec.center.y + hy, spec.center.z + hz),
+    createVertex(spec.center.x - hx, spec.center.y + hy, spec.center.z + hz)
+  );
+
+  polygons.push(
+    createPolygon(
+      [base, base + 1, base + 2, base + 3],
+      vec3(0, 0, -1),
+      vec3(spec.center.x, spec.center.y, spec.center.z - hz),
+      spec.wallColor
+    ),
+    createPolygon(
+      [base + 4, base + 5, base + 6, base + 7],
+      vec3(0, 0, 1),
+      vec3(spec.center.x, spec.center.y, spec.center.z + hz),
+      spec.wallColor
+    ),
+    createPolygon(
+      [base + 1, base + 5, base + 6, base + 2],
+      vec3(1, 0, 0),
+      vec3(spec.center.x + hx, spec.center.y, spec.center.z),
+      spec.wallColor
+    ),
+    createPolygon(
+      [base, base + 3, base + 7, base + 4],
+      vec3(-1, 0, 0),
+      vec3(spec.center.x - hx, spec.center.y, spec.center.z),
+      spec.wallColor
+    ),
+    createPolygon(
+      [base + 3, base + 2, base + 6, base + 7],
+      vec3(0, 1, 0),
+      vec3(spec.center.x, spec.center.y + hy, spec.center.z),
+      spec.roofColor
+    )
+  );
+}
+
+function appendEmitterPanel(
+  vertices: SrfVertex[],
+  polygons: SrfPolygon[],
+  center: Vec3,
+  width: number,
+  depth: number,
+  color: Color
+): void {
+  const base = vertices.length;
+  const hx = width * 0.5;
+  const hz = depth * 0.5;
+  vertices.push(
+    createVertex(center.x - hx, center.y, center.z - hz),
+    createVertex(center.x + hx, center.y, center.z - hz),
+    createVertex(center.x + hx, center.y, center.z + hz),
+    createVertex(center.x - hx, center.y, center.z + hz)
+  );
+  polygons.push(
+    createPolygon([base, base + 1, base + 2, base + 3], vec3(0, -1, 0), center, color, 2)
+  );
+}
+
+function scaleColor(color: Color, scale: number): Color {
+  return {
+    r: Math.min(1, color.r * scale),
+    g: Math.min(1, color.g * scale),
+    b: Math.min(1, color.b * scale),
+  };
+}
+
+function mixColor(a: Color, b: Color, t: number): Color {
+  const clamped = Math.max(0, Math.min(1, t));
+  return {
+    r: a.r + (b.r - a.r) * clamped,
+    g: a.g + (b.g - a.g) * clamped,
+    b: a.b + (b.b - a.b) * clamped,
   };
 }
 

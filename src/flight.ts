@@ -1145,6 +1145,13 @@ function pickScenarioManeuverKey(state: AppState): ManeuverKey | null {
 function applyScenarioSpawn(state: AppState): boolean {
   switch (state.runtime.scenario) {
     case "runway":
+      if (state.runtime.mapVariant === "san-francisco") {
+        state.obj.p = vec3(110, state.config.altitude, -1040);
+        state.obj.a = { h: 0, p: 0, b: 0 };
+        state.eye.p = vec3(40, state.config.altitude + 18, -1220);
+        state.eye.a = { h: 0, p: 0, b: 0 };
+        return true;
+      }
       state.obj.p = vec3(92.86, state.config.altitude, -900);
       state.obj.a = { h: 0, p: 0, b: 0 };
       state.eye.p = vec3(20, state.config.altitude + 15, -1080);
@@ -1159,6 +1166,59 @@ function applyScenarioSpawn(state: AppState): boolean {
     default:
       return false;
   }
+}
+
+function applyMapVariantSpawn(state: AppState): boolean {
+  if (state.runtime.mapVariant === "san-francisco") {
+    const altitude = Math.max(state.config.altitude + 40, 165);
+    const spawnOptions = [
+      { objX: 110, objZ: -1040, heading: 0, eyeSideOffset: -90 },
+      { objX: 120, objZ: 260, heading: 32768, eyeSideOffset: 90 },
+      { objX: 500, objZ: -820, heading: 0, eyeSideOffset: -70 },
+      { objX: 520, objZ: 180, heading: 32768, eyeSideOffset: 70 },
+    ];
+    const choice = spawnOptions[Math.floor(state.random() * spawnOptions.length)];
+    const eyeDistance = 220;
+
+    state.obj.p = vec3(choice.objX, altitude, choice.objZ);
+    state.obj.a = { h: choice.heading, p: 0, b: 0 };
+    state.eye.p = vec3(
+      choice.objX +
+        sin16(choice.heading) * eyeDistance +
+        cos16(choice.heading) * choice.eyeSideOffset,
+      altitude + 24,
+      choice.objZ -
+        cos16(choice.heading) * eyeDistance +
+        sin16(choice.heading) * choice.eyeSideOffset
+    );
+    state.eye.a = { h: 0, p: 0, b: 0 };
+    return true;
+  }
+
+  if (state.runtime.mapVariant !== "downtown") {
+    return false;
+  }
+
+  const altitude = Math.max(state.config.altitude + 50, 170);
+  const spawnOptions = [
+    { objX: 0, objZ: -960, heading: 0 },
+    { objX: 42, objZ: -820, heading: 0 },
+    { objX: 0, objZ: 900, heading: 32768 },
+    { objX: -42, objZ: 760, heading: 32768 },
+  ];
+  const choice = spawnOptions[Math.floor(state.random() * spawnOptions.length)];
+  const eyeDistance = 210;
+  const sideOffset = -70;
+
+  state.obj.p = vec3(choice.objX, altitude, choice.objZ);
+  state.obj.a = { h: choice.heading, p: 0, b: 0 };
+  state.eye.p = vec3(
+    choice.objX + sin16(choice.heading) * eyeDistance + cos16(choice.heading) * sideOffset,
+    altitude + 26,
+    choice.objZ - cos16(choice.heading) * eyeDistance + sin16(choice.heading) * sideOffset
+  );
+  state.eye.a = { h: 0, p: 0, b: 0 };
+  return true;
 }
 
 function beginManeuverEffects(maneuver: ManeuverState | null, state: AppState): void {
@@ -1286,7 +1346,7 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
   }
   state.gpuAircraft = gpuAircraftList[state.show.aircraft];
 
-  if (!applyScenarioSpawn(state)) {
+  if (!applyScenarioSpawn(state) && !applyMapVariantSpawn(state)) {
     const dir = Math.floor(state.random() * 0x10000);
     const altitude = state.config.altitude;
     state.obj.p = vec3(-500.0 * sin16(dir), altitude, 500.0 * cos16(dir));

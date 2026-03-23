@@ -1,17 +1,36 @@
-import type { Field, FieldPc2, FieldSrf } from "./types";
+import type { Field, FieldPc2, FieldSrf, Pc2Object } from "./types";
 import { colorFromRGB, vec3 } from "./math";
 import type { BuildingSpec, RoadStyle } from "./scene-models";
 import {
+  buildMidpoints,
   createBoxModel,
-  createWindowedBoxModel,
-  createRectangleObject,
-  createRoadSegmentObjects,
   createCrosswalkObject,
   createPc2,
-  buildMidpoints,
+  createRectangleObject,
+  createRoadSegmentObjects,
+  createWindowedBoxModel,
 } from "./scene-models";
 
 const DOWNTOWN_TAG = "__browser_downtown_augmented__";
+
+const LOT_XS = [-900, -640, -380, -140, 140, 380, 640, 900];
+const LOT_ZS = [-900, -640, -380, -140, 140, 380, 640, 900];
+
+const WATER_RECT = {
+  minX: -1070,
+  maxX: -850,
+  minZ: -1195,
+  maxZ: -45,
+};
+
+const FLIGHT_CORRIDOR = {
+  minX: -170,
+  maxX: 170,
+  minZ: -1080,
+  maxZ: 960,
+};
+
+const CENTRAL_CLEAR_RADIUS = 250;
 
 export function enhanceDowntownField(field: Field): Field {
   if (
@@ -20,168 +39,286 @@ export function enhanceDowntownField(field: Field): Field {
   ) {
     return field;
   }
+
   return {
     ...field,
-    sky: colorFromRGB(86, 126, 178),
-    gnd: colorFromRGB(52, 54, 58),
+    sky: colorFromRGB(106, 142, 188),
+    gnd: colorFromRGB(60, 62, 66),
     pc2: [...field.pc2, ...createDowntownOverlayEntries()],
     srf: [...field.srf, ...createDowntownBuildingEntries()],
   };
 }
 
-// --- Downtown Ground Overlay ---
+function overlapsRect(
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  rect: { minX: number; maxX: number; minZ: number; maxZ: number },
+  padding = 0
+): boolean {
+  const halfW = width * 0.5 + padding;
+  const halfD = depth * 0.5 + padding;
+
+  return (
+    x - halfW < rect.maxX && x + halfW > rect.minX && z - halfD < rect.maxZ && z + halfD > rect.minZ
+  );
+}
+
+function inFlightCorridor(
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  padding = 0
+): boolean {
+  return overlapsRect(x, z, width, depth, FLIGHT_CORRIDOR, padding);
+}
+
+function inWater(x: number, z: number, width: number, depth: number, padding = 0): boolean {
+  return overlapsRect(x, z, width, depth, WATER_RECT, padding);
+}
+
+function inCentralAirspace(x: number, z: number): boolean {
+  return Math.hypot(x, z) < CENTRAL_CLEAR_RADIUS;
+}
+
+function addWindowedBuilding(
+  specs: BuildingSpec[],
+  name: string,
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  height: number,
+  wall: ReturnType<typeof colorFromRGB>,
+  roof: ReturnType<typeof colorFromRGB>,
+  glass: ReturnType<typeof colorFromRGB>,
+  hdg = 0,
+  windowRows = 6,
+  windowWidth = 5,
+  windowHeight = 3.5,
+  gapHeight = 3
+): void {
+  specs.push({
+    name,
+    pos: { p: vec3(x, 0, z), a: { h: hdg, p: 0, b: 0 } },
+    model: createWindowedBoxModel(
+      width,
+      depth,
+      height,
+      wall,
+      roof,
+      glass,
+      windowRows,
+      windowWidth,
+      windowHeight,
+      gapHeight
+    ),
+  });
+}
+
+function addBoxBuilding(
+  specs: BuildingSpec[],
+  name: string,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  depth: number,
+  height: number,
+  wall: ReturnType<typeof colorFromRGB>,
+  roof: ReturnType<typeof colorFromRGB>,
+  hdg = 0
+): void {
+  specs.push({
+    name,
+    pos: { p: vec3(x, y, z), a: { h: hdg, p: 0, b: 0 } },
+    model: createBoxModel(width, depth, height, wall, roof),
+  });
+}
 
 function createDowntownOverlayEntries(): FieldPc2[] {
-  const asphalt = colorFromRGB(54, 58, 64);
-  const avenue = colorFromRGB(62, 66, 72);
-  const shoulder = colorFromRGB(110, 112, 114);
-  const plaza = colorFromRGB(118, 122, 126);
-  const park = colorFromRGB(62, 92, 68);
-  const parkLight = colorFromRGB(72, 104, 76);
-  const lane = colorFromRGB(224, 206, 132);
-  const edge = colorFromRGB(232, 232, 228);
-  const crosswalk = colorFromRGB(214, 216, 220);
-  const water = colorFromRGB(56, 92, 138);
-  const sidewalk = colorFromRGB(136, 132, 126);
-  const courtyard = colorFromRGB(108, 106, 100);
-  const lot = colorFromRGB(78, 80, 84);
-  const brick = colorFromRGB(140, 100, 80);
+  const objects: Pc2Object[] = [];
+  const roadXs = buildMidpoints(LOT_XS);
+  const roadZs = buildMidpoints(LOT_ZS);
 
-  const objects = [];
-  const blockXs = [-810, -570, -330, -90, 150, 390, 630, 870];
-  const blockZs = [-810, -570, -330, -90, 150, 390, 630, 870];
-  const roadXs = buildMidpoints(blockXs);
-  const roadZs = buildMidpoints(blockZs);
+  const avenue = colorFromRGB(66, 70, 76);
+  const street = colorFromRGB(58, 62, 68);
+  const broadway = colorFromRGB(74, 76, 82);
+  const curb = colorFromRGB(118, 116, 112);
+  const sidewalk = colorFromRGB(142, 136, 128);
+  const sidewalkDark = colorFromRGB(120, 114, 108);
+  const plaza = colorFromRGB(154, 148, 140);
+  const plazaDark = colorFromRGB(132, 126, 120);
+  const lane = colorFromRGB(232, 206, 120);
+  const edge = colorFromRGB(236, 236, 232);
+  const busLane = colorFromRGB(122, 46, 40);
+  const planter = colorFromRGB(80, 98, 74);
+  const planterLight = colorFromRGB(94, 116, 84);
+  const crosswalk = colorFromRGB(224, 224, 226);
+  const water = colorFromRGB(56, 92, 138);
+  const lot = colorFromRGB(86, 88, 92);
+  const loading = colorFromRGB(96, 96, 88);
+  const taxiStand = colorFromRGB(142, 110, 54);
 
   const avenueStyle: RoadStyle = {
-    shoulderColor: shoulder,
+    shoulderColor: curb,
     asphaltColor: avenue,
     shoulderWidth: 4,
-    medianColor: colorFromRGB(86, 86, 82),
+    medianColor: colorFromRGB(86, 88, 82),
     medianWidth: 5,
-    medianInset: 20,
+    medianInset: 24,
     markings: [
-      { offsetX: -14, width: 1.6, color: edge, dashLength: 16, gapLength: 12, inset: 18 },
-      { offsetX: 14, width: 1.6, color: edge, dashLength: 16, gapLength: 12, inset: 18 },
-      { offsetX: -3.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 18 },
-      { offsetX: 3.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 18 },
-      { offsetX: -22, width: 1.4, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
-      { offsetX: 22, width: 1.4, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
-    ],
-  };
-  const streetStyle: RoadStyle = {
-    shoulderColor: shoulder,
-    asphaltColor: asphalt,
-    shoulderWidth: 3,
-    markings: [
-      { offsetX: 0, width: 1.4, color: lane, dashLength: 18, gapLength: 16, inset: 14 },
-      { offsetX: -13, width: 1.1, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
-      { offsetX: 13, width: 1.1, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
+      { offsetX: -21, width: 1.5, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
+      { offsetX: 21, width: 1.5, color: edge, dashLength: 0, gapLength: 0, inset: 14 },
+      { offsetX: -7.5, width: 1.2, color: lane, dashLength: 18, gapLength: 12, inset: 18 },
+      { offsetX: 7.5, width: 1.2, color: lane, dashLength: 18, gapLength: 12, inset: 18 },
+      { offsetX: -2.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 20 },
+      { offsetX: 2.6, width: 1.2, color: lane, dashLength: 0, gapLength: 0, inset: 20 },
     ],
   };
 
-  // Roads
+  const streetStyle: RoadStyle = {
+    shoulderColor: curb,
+    asphaltColor: street,
+    shoulderWidth: 3,
+    markings: [
+      { offsetX: -13, width: 1.05, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
+      { offsetX: 13, width: 1.05, color: edge, dashLength: 0, gapLength: 0, inset: 12 },
+      { offsetX: 0, width: 1.2, color: lane, dashLength: 16, gapLength: 16, inset: 14 },
+    ],
+  };
+
+  const broadwayStyle: RoadStyle = {
+    shoulderColor: curb,
+    asphaltColor: broadway,
+    shoulderWidth: 4,
+    medianColor: plazaDark,
+    medianWidth: 4,
+    medianInset: 38,
+    markings: [
+      { offsetX: -16.5, width: 1.2, color: edge, dashLength: 0, gapLength: 0, inset: 28 },
+      { offsetX: 16.5, width: 1.2, color: edge, dashLength: 0, gapLength: 0, inset: 28 },
+      { offsetX: 0, width: 1.2, color: lane, dashLength: 24, gapLength: 18, inset: 42 },
+    ],
+  };
+
   for (const x of roadXs) {
-    const isAve = Math.abs(x) < 90;
+    const isGrandAvenue = Math.abs(x) < 90;
+    const width = isGrandAvenue ? 60 : Math.abs(x) < 340 ? 38 : 30;
     objects.push(
-      ...createRoadSegmentObjects(x, 0, isAve ? 46 : 28, 2140, 0, isAve ? avenueStyle : streetStyle)
+      ...createRoadSegmentObjects(x, 0, width, 2260, 0, isGrandAvenue ? avenueStyle : streetStyle)
     );
+
+    if (isGrandAvenue) {
+      objects.push(
+        createRectangleObject(busLane, x - 15, 0, 5.5, 2180, 0),
+        createRectangleObject(busLane, x + 15, 0, 5.5, 2180, 0),
+        createRectangleObject(planter, x, -220, 8, 90, 0),
+        createRectangleObject(planter, x, 220, 8, 90, 0)
+      );
+    }
   }
+
   for (const z of roadZs) {
-    const isAve = Math.abs(z) < 90;
+    const isBroadCrosstown = Math.abs(z) < 90 || Math.abs(z - 260) < 40 || Math.abs(z + 260) < 40;
+    const width = isBroadCrosstown ? 42 : 30;
     objects.push(
       ...createRoadSegmentObjects(
         0,
         z,
-        isAve ? 46 : 28,
-        2140,
+        width,
+        2260,
         16384,
-        isAve ? avenueStyle : streetStyle
+        isBroadCrosstown ? avenueStyle : streetStyle
       )
     );
+
+    if (isBroadCrosstown) {
+      objects.push(
+        createRectangleObject(busLane, -220, z - 10, 180, 5, 16384),
+        createRectangleObject(busLane, 220, z + 10, 180, 5, 16384)
+      );
+    }
   }
 
-  // Plazas, parks, water
+  objects.push(...createRoadSegmentObjects(-40, -30, 42, 2300, 5632, broadwayStyle));
+
   objects.push(
-    createRectangleObject(plaza, 0, 0, 190, 190, 0),
-    createRectangleObject(plaza, 390, -390, 120, 150, 0),
-    createRectangleObject(park, -420, 390, 190, 210, 0),
-    createRectangleObject(park, 450, 450, 170, 170, 0),
-    createRectangleObject(water, -960, -620, 220, 1150, 0)
+    createRectangleObject(water, -960, -620, 220, 1150, 0),
+    createRectangleObject(plaza, 0, -40, 180, 240, 0),
+    createRectangleObject(plaza, -250, -40, 86, 250, 0),
+    createRectangleObject(plaza, 250, -20, 86, 230, 0),
+    createRectangleObject(plazaDark, -86, 80, 96, 48, 0),
+    createRectangleObject(plazaDark, 92, -96, 84, 40, 0),
+    createRectangleObject(planterLight, 0, -28, 30, 94, 0),
+    createRectangleObject(planter, -248, 48, 22, 72, 0),
+    createRectangleObject(planter, 252, -88, 22, 68, 0),
+    createRectangleObject(sidewalkDark, -530, 500, 170, 180, 0),
+    createRectangleObject(sidewalkDark, 540, 500, 170, 180, 0)
   );
 
-  // Block interiors — sidewalks, courtyards, parking lots, green spaces
-  const blockWaterRect = {
-    minX: -960 - 110,
-    maxX: -960 + 110,
-    minZ: -620 - 575,
-    maxZ: -620 + 575,
-  };
-  for (let ix = 0; ix < blockXs.length - 1; ix++) {
-    for (let iz = 0; iz < blockZs.length - 1; iz++) {
-      const cx = (blockXs[ix] + blockXs[ix + 1]) * 0.5;
-      const cz = (blockZs[iz] + blockZs[iz + 1]) * 0.5;
-      const bw = Math.abs(blockXs[ix + 1] - blockXs[ix]) - 60;
-      const bd = Math.abs(blockZs[iz + 1] - blockZs[iz]) - 60;
-      if (bw < 40 || bd < 40) continue;
-      if (Math.abs(cx) < 120 && Math.abs(cz) < 120) continue;
+  for (let ix = 0; ix < LOT_XS.length - 1; ix++) {
+    for (let iz = 0; iz < LOT_ZS.length - 1; iz++) {
+      const cx = (LOT_XS[ix] + LOT_XS[ix + 1]) * 0.5;
+      const cz = (LOT_ZS[iz] + LOT_ZS[iz + 1]) * 0.5;
+      const width = Math.abs(LOT_XS[ix + 1] - LOT_XS[ix]) - 60;
+      const depth = Math.abs(LOT_ZS[iz + 1] - LOT_ZS[iz]) - 60;
+      if (width < 50 || depth < 50) continue;
+      if (inWater(cx, cz, width, depth)) continue;
 
-      // Calculate block bounds for water check
-      const bMinX = cx - bw * 0.5;
-      const bMaxX = cx + bw * 0.5;
-      const bMinZ = cz - bd * 0.5;
-      const bMaxZ = cz + bd * 0.5;
-
-      // Skip blocks that overlap with water area
-      if (
-        bMinX < blockWaterRect.maxX &&
-        bMaxX > blockWaterRect.minX &&
-        bMinZ < blockWaterRect.maxZ &&
-        bMaxZ > blockWaterRect.minZ
-      ) {
+      if (inFlightCorridor(cx, cz, width, depth, 18) || inCentralAirspace(cx, cz)) {
+        objects.push(createRectangleObject(plaza, cx, cz, width * 0.88, depth * 0.88, 0));
+        if (Math.abs(cx) < 360 && Math.abs(cz) < 300) {
+          objects.push(createRectangleObject(planterLight, cx, cz, width * 0.22, depth * 0.26, 0));
+        }
         continue;
       }
 
-      const seed = (ix * 7 + iz * 13) % 8;
-      if (seed < 2) {
-        // Green courtyard with inner garden
-        objects.push(createRectangleObject(sidewalk, cx, cz, bw, bd, 0));
-        objects.push(createRectangleObject(parkLight, cx, cz, bw * 0.35, bd * 0.35, 0));
-      } else if (seed < 4) {
-        // Brick courtyard
-        objects.push(createRectangleObject(courtyard, cx, cz, bw * 0.9, bd * 0.9, 0));
-        objects.push(createRectangleObject(brick, cx + bw * 0.2, cz, bw * 0.15, bd * 0.4, 0));
-      } else if (seed < 5) {
-        // Parking lot with lines
-        objects.push(createRectangleObject(lot, cx, cz, bw * 0.85, bd * 0.85, 0));
-        for (let row = 0; row < 3; row++) {
-          const ly = cz - bd * 0.3 + row * bd * 0.25;
-          objects.push(createRectangleObject(edge, cx, ly, bw * 0.75, 1.2, 0));
-        }
+      const seed = (ix * 11 + iz * 17) % 7;
+      if (Math.abs(cx) < 460 && Math.abs(cz) < 420) {
+        objects.push(
+          createRectangleObject(sidewalk, cx, cz, width * 0.92, depth * 0.92, 0),
+          createRectangleObject(plazaDark, cx, cz, width * 0.48, depth * 0.22, 0)
+        );
+      } else if (seed <= 1) {
+        objects.push(
+          createRectangleObject(sidewalk, cx, cz, width * 0.9, depth * 0.9, 0),
+          createRectangleObject(planter, cx, cz, width * 0.34, depth * 0.28, 0)
+        );
+      } else if (seed <= 3) {
+        objects.push(
+          createRectangleObject(lot, cx, cz, width * 0.88, depth * 0.88, 0),
+          createRectangleObject(edge, cx, cz - depth * 0.22, width * 0.72, 1.1, 0),
+          createRectangleObject(edge, cx, cz + depth * 0.02, width * 0.72, 1.1, 0),
+          createRectangleObject(edge, cx, cz + depth * 0.26, width * 0.72, 1.1, 0)
+        );
+      } else if (seed === 4) {
+        objects.push(
+          createRectangleObject(sidewalkDark, cx, cz, width * 0.84, depth * 0.84, 0),
+          createRectangleObject(loading, cx, cz, width * 0.24, depth * 0.5, 0)
+        );
       } else {
-        // Plain sidewalk
-        objects.push(createRectangleObject(sidewalk, cx, cz, bw * 0.6, bd * 0.6, 0));
+        objects.push(
+          createRectangleObject(sidewalk, cx, cz, width * 0.86, depth * 0.86, 0),
+          createRectangleObject(taxiStand, cx + width * 0.2, cz, width * 0.12, depth * 0.42, 0)
+        );
       }
     }
   }
 
-  // Crosswalks and intersection sidewalks
   for (const x of roadXs) {
     for (const z of roadZs) {
-      if (Math.abs(x) < 80 && Math.abs(z) < 80) continue;
+      if (Math.abs(x) < 88 && Math.abs(z) < 88) continue;
       objects.push(createCrosswalkObject(x, z, crosswalk));
       objects.push(createRectangleObject(sidewalk, x, z, 56, 56, 0));
+
+      if (Math.abs(x) < 320 && Math.abs(z) < 320) {
+        objects.push(createRectangleObject(plazaDark, x, z, 18, 18, 0));
+      }
     }
   }
-
-  // Landmark surroundings
-  objects.push(
-    createRectangleObject(sidewalk, -420, 390, 210, 230, 0),
-    createRectangleObject(sidewalk, 450, 450, 190, 190, 0),
-    createRectangleObject(parkLight, 0, 0, 36, 36, 0),
-    createRectangleObject(courtyard, 390, -390, 140, 170, 0),
-    createRectangleObject(sidewalk, -520, -460, 200, 140, 0)
-  );
 
   return [
     {
@@ -193,248 +330,372 @@ function createDowntownOverlayEntries(): FieldPc2[] {
   ];
 }
 
-// --- Downtown Buildings ---
-
 function createDowntownBuildingEntries(): FieldSrf[] {
   const specs: BuildingSpec[] = [];
-  const xs = [-810, -570, -330, -90, 150, 390, 630, 870];
-  const zs = [-810, -570, -330, -90, 150, 390, 630, 870];
-  const glassBlue = colorFromRGB(120, 165, 210);
-  const glassTeal = colorFromRGB(95, 155, 180);
-  const glassDark = colorFromRGB(80, 120, 160);
+  const glassBlue = colorFromRGB(122, 176, 226);
+  const glassTeal = colorFromRGB(88, 172, 188);
+  const glassWarm = colorFromRGB(232, 212, 150);
+  const glassDark = colorFromRGB(98, 134, 176);
+  const concrete = colorFromRGB(114, 120, 130);
+  const concreteDark = colorFromRGB(84, 90, 100);
+  const limestone = colorFromRGB(176, 166, 154);
+  const limestoneRoof = colorFromRGB(124, 118, 110);
+  const graphite = colorFromRGB(72, 78, 90);
+  const graphiteRoof = colorFromRGB(52, 58, 70);
+  const bronze = colorFromRGB(124, 112, 96);
+  const bronzeRoof = colorFromRGB(92, 84, 74);
 
-  // Water rectangle bounds (from createRectangleObject(water, -960, -620, 220, 1150, 0))
-  const waterRect = {
-    minX: -960 - 110,
-    maxX: -960 + 110,
-    minZ: -620 - 575,
-    maxZ: -620 + 575,
-  };
+  for (let ix = 0; ix < LOT_XS.length; ix++) {
+    for (let iz = 0; iz < LOT_ZS.length; iz++) {
+      const x = LOT_XS[ix];
+      const z = LOT_ZS[iz];
+      const centralDistrict = Math.abs(x) < 460 && Math.abs(z) < 420;
+      if (centralDistrict) continue;
 
-  for (let ix = 0; ix < xs.length; ix++) {
-    for (let iz = 0; iz < zs.length; iz++) {
-      const x = xs[ix];
-      const z = zs[iz];
-      if (Math.abs(x) < 120 && Math.abs(z) < 120) continue;
-      if (x < -860) continue;
+      const width = 62 + ((ix * 17 + iz * 11) % 26);
+      const depth = 54 + ((ix * 13 + iz * 19) % 22);
+      if (inWater(x, z, width, depth, 14)) continue;
+      if (inFlightCorridor(x, z, width, depth, 28)) continue;
+      if (inCentralAirspace(x, z)) continue;
 
-      const dist = Math.sqrt(x * x + z * z);
-      const cent = Math.max(0, 1 - dist / 1300);
-      const w = 56 + ((ix * 17 + iz * 11) % 34);
-      const d = 48 + ((ix * 13 + iz * 19) % 30);
+      const dist = Math.hypot(x, z);
+      const timesSquareShoulder = Math.abs(x) < 620 && Math.abs(x) > 180 && Math.abs(z) < 520;
+      let height =
+        58 +
+        Math.max(0, 1 - dist / 1550) * 128 +
+        ((ix * 29 + iz * 23) % 30) +
+        (timesSquareShoulder ? 34 : 0);
 
-      // Calculate building bounds for water check
-      const bMinX = x - w * 0.5;
-      const bMaxX = x + w * 0.5;
-      const bMinZ = z - d * 0.5;
-      const bMaxZ = z + d * 0.5;
+      if (Math.abs(x) > 760 || Math.abs(z) > 760) height *= 0.72;
+      if (Math.abs(z) > 640) height *= 0.84;
+      if (x < -760 && z < -120) height *= 0.7;
+      height = Math.min(246, height);
 
-      // Skip buildings that overlap with water area
-      if (
-        bMinX < waterRect.maxX &&
-        bMaxX > waterRect.minX &&
-        bMinZ < waterRect.maxZ &&
-        bMaxZ > waterRect.minZ
-      ) {
-        continue;
-      }
-
-      const h = 30 + cent * 180 + ((ix * 29 + iz * 23) % 46);
       const hdg = (ix + iz) % 3 === 0 ? 16384 : 0;
-      const wall = (ix + iz) % 2 === 0 ? colorFromRGB(98, 108, 122) : colorFromRGB(118, 120, 128);
-      const roof = (ix + iz) % 2 === 0 ? colorFromRGB(70, 78, 90) : colorFromRGB(86, 88, 96);
+      const wall = timesSquareShoulder
+        ? (ix + iz) % 2 === 0
+          ? graphite
+          : concreteDark
+        : (ix + iz) % 2 === 0
+          ? concrete
+          : bronze;
+      const roof = timesSquareShoulder
+        ? (ix + iz) % 2 === 0
+          ? graphiteRoof
+          : concreteDark
+        : (ix + iz) % 2 === 0
+          ? concreteDark
+          : bronzeRoof;
+      const glass =
+        (ix + iz) % 4 === 0
+          ? glassWarm
+          : (ix + iz) % 3 === 0
+            ? glassTeal
+            : (ix + iz) % 2 === 0
+              ? glassBlue
+              : glassDark;
 
-      const winCount = Math.max(3, Math.min(12, Math.floor(h / 18)));
-      const winColor =
-        (ix + iz) % 3 === 0 ? glassTeal : (ix + iz) % 3 === 1 ? glassBlue : glassDark;
-      const winSize = 4 + ((ix * 7 + iz * 3) % 3);
+      addWindowedBuilding(
+        specs,
+        `outer-tower-${ix}-${iz}`,
+        x,
+        z,
+        width,
+        depth,
+        height,
+        wall,
+        roof,
+        glass,
+        hdg,
+        Math.max(6, Math.round(height / 18)),
+        4.5,
+        3.6,
+        2.8
+      );
 
-      specs.push({
-        name: `tower-${ix}-${iz}`,
-        pos: { p: vec3(x, 0, z), a: { h: hdg, p: 0, b: 0 } },
-        model: createWindowedBoxModel(w, d, h, wall, roof, winColor, winCount, winSize, 3.0, 2.5),
-      });
-
-      // Podium at base of some towers
-      if ((ix + iz) % 2 === 0 && cent > 0.2) {
-        specs.push({
-          name: `podium-${ix}-${iz}`,
-          pos: { p: vec3(x + 34, 0, z - 28), a: { h: 0, p: 0, b: 0 } },
-          model: createWindowedBoxModel(
-            42,
-            32,
-            18 + cent * 16,
-            colorFromRGB(134, 128, 122),
-            colorFromRGB(92, 88, 84),
-            glassBlue,
-            3,
-            5,
-            3.5,
-            3.0
-          ),
-        });
+      if (timesSquareShoulder) {
+        addWindowedBuilding(
+          specs,
+          `outer-podium-${ix}-${iz}`,
+          x + (x < 0 ? 36 : -36),
+          z + ((ix + iz) % 2 === 0 ? -26 : 28),
+          48,
+          34,
+          28,
+          limestone,
+          limestoneRoof,
+          glassWarm,
+          hdg,
+          4,
+          5,
+          3.8,
+          2.8
+        );
       }
 
-      // Annex building adjacent to central towers
-      if (cent > 0.35 && (ix + iz) % 3 === 0) {
-        specs.push({
-          name: `annex-${ix}-${iz}`,
-          pos: { p: vec3(x - 42, 0, z + 26), a: { h: hdg, p: 0, b: 0 } },
-          model: createWindowedBoxModel(
-            28 + ((ix * 11 + iz * 7) % 16),
-            24 + ((ix * 9 + iz * 13) % 12),
-            14 + cent * 30 + ((ix * 5 + iz * 17) % 18),
-            colorFromRGB(106, 114, 124),
-            colorFromRGB(82, 88, 96),
-            glassTeal,
-            4,
-            4,
-            3.0,
-            2.5
-          ),
-        });
-      }
-
-      // Roof mechanical structure on tall buildings
-      if (h > 120 && (ix + iz) % 4 === 0) {
-        specs.push({
-          name: `roof-${ix}-${iz}`,
-          pos: { p: vec3(x, h, z), a: { h: hdg, p: 0, b: 0 } },
-          model: createBoxModel(
-            w * 0.3,
-            d * 0.3,
-            8,
-            colorFromRGB(78, 84, 92),
-            colorFromRGB(60, 66, 74)
-          ),
-        });
-      }
-
-      // Antenna on very central tall buildings
-      if (cent > 0.6 && (ix + iz) % 5 === 0) {
-        specs.push({
-          name: `antenna-${ix}-${iz}`,
-          pos: { p: vec3(x, h + 8, z), a: { h: 0, p: 0, b: 0 } },
-          model: createBoxModel(
-            3,
-            3,
-            20 + cent * 15,
-            colorFromRGB(140, 140, 148),
-            colorFromRGB(160, 160, 168)
-          ),
-        });
+      if (height > 132) {
+        addBoxBuilding(
+          specs,
+          `outer-roof-${ix}-${iz}`,
+          x,
+          height,
+          z,
+          width * 0.28,
+          depth * 0.26,
+          10,
+          colorFromRGB(74, 78, 84),
+          colorFromRGB(60, 64, 70),
+          hdg
+        );
       }
     }
   }
 
-  // Landmark buildings
-  specs.push(
+  const timesSquareClusters = [
     {
-      name: "city-hall",
-      pos: { p: vec3(0, 0, 0), a: { h: 0, p: 0, b: 0 } },
-      model: createWindowedBoxModel(
-        120,
-        90,
-        42,
-        colorFromRGB(176, 170, 160),
-        colorFromRGB(128, 122, 114),
-        glassBlue,
-        5,
-        8,
-        4.0,
-        3.5
-      ),
+      name: "west-marquee-south",
+      x: -290,
+      z: -230,
+      width: 92,
+      depth: 66,
+      height: 188,
+      wall: graphite,
+      roof: graphiteRoof,
+      glass: glassTeal,
     },
     {
-      name: "spire-north",
-      pos: { p: vec3(180, 0, -180), a: { h: 0, p: 0, b: 0 } },
-      model: createWindowedBoxModel(
-        62,
-        62,
-        240,
-        colorFromRGB(96, 106, 122),
-        colorFromRGB(66, 72, 84),
-        glassTeal,
-        14,
-        5,
-        3.0,
-        2.0
-      ),
+      name: "west-marquee-mid",
+      x: -300,
+      z: 20,
+      width: 98,
+      depth: 70,
+      height: 176,
+      wall: concreteDark,
+      roof: graphiteRoof,
+      glass: glassBlue,
     },
     {
-      name: "spire-west",
-      pos: { p: vec3(-180, 0, 180), a: { h: 0, p: 0, b: 0 } },
-      model: createWindowedBoxModel(
-        70,
-        58,
-        220,
-        colorFromRGB(110, 118, 130),
-        colorFromRGB(74, 80, 92),
-        glassDark,
-        13,
-        5,
-        3.0,
-        2.0
-      ),
+      name: "west-marquee-north",
+      x: -316,
+      z: 278,
+      width: 88,
+      depth: 62,
+      height: 214,
+      wall: graphite,
+      roof: graphiteRoof,
+      glass: glassWarm,
     },
     {
-      name: "stadium",
-      pos: { p: vec3(-520, 0, -460), a: { h: 0, p: 0, b: 0 } },
-      model: createBoxModel(180, 120, 32, colorFromRGB(122, 126, 132), colorFromRGB(84, 88, 94)),
+      name: "east-marquee-south",
+      x: 292,
+      z: -210,
+      width: 90,
+      depth: 68,
+      height: 194,
+      wall: graphite,
+      roof: graphiteRoof,
+      glass: glassBlue,
     },
     {
-      name: "church",
-      pos: { p: vec3(-450, 0, 500), a: { h: 16384, p: 0, b: 0 } },
-      model: createBoxModel(36, 52, 48, colorFromRGB(168, 162, 152), colorFromRGB(110, 104, 96)),
+      name: "east-marquee-mid",
+      x: 308,
+      z: 34,
+      width: 102,
+      depth: 72,
+      height: 204,
+      wall: concreteDark,
+      roof: graphiteRoof,
+      glass: glassTeal,
     },
     {
-      name: "church-tower",
-      pos: { p: vec3(-450, 48, -26), a: { h: 0, p: 0, b: 0 } },
-      model: createBoxModel(16, 16, 30, colorFromRGB(160, 154, 144), colorFromRGB(100, 94, 86)),
+      name: "east-marquee-north",
+      x: 292,
+      z: 286,
+      width: 90,
+      depth: 62,
+      height: 222,
+      wall: graphite,
+      roof: graphiteRoof,
+      glass: glassWarm,
     },
-    {
-      name: "warehouse-1",
-      pos: { p: vec3(700, 0, -600), a: { h: 0, p: 0, b: 0 } },
-      model: createBoxModel(120, 80, 14, colorFromRGB(130, 126, 118), colorFromRGB(100, 96, 88)),
-    },
-    {
-      name: "warehouse-2",
-      pos: { p: vec3(700, 0, -460), a: { h: 0, p: 0, b: 0 } },
-      model: createBoxModel(100, 70, 14, colorFromRGB(124, 120, 112), colorFromRGB(94, 90, 82)),
+  ] as const;
+
+  const signPalettes = [
+    [colorFromRGB(232, 72, 64), colorFromRGB(160, 40, 34)],
+    [colorFromRGB(62, 168, 210), colorFromRGB(34, 102, 142)],
+    [colorFromRGB(242, 188, 72), colorFromRGB(152, 112, 38)],
+  ] as const;
+
+  for (const cluster of timesSquareClusters) {
+    addWindowedBuilding(
+      specs,
+      cluster.name,
+      cluster.x,
+      cluster.z,
+      cluster.width,
+      cluster.depth,
+      cluster.height,
+      cluster.wall,
+      cluster.roof,
+      cluster.glass,
+      0,
+      Math.max(10, Math.round(cluster.height / 16)),
+      4.6,
+      3.8,
+      2.6
+    );
+
+    addWindowedBuilding(
+      specs,
+      `${cluster.name}-podium`,
+      cluster.x + (cluster.x < 0 ? 42 : -42),
+      cluster.z + (cluster.z < 0 ? 12 : -12),
+      54,
+      42,
+      34,
+      limestone,
+      limestoneRoof,
+      glassWarm,
+      0,
+      5,
+      5.5,
+      4,
+      2.6
+    );
+
+    const signX =
+      cluster.x < 0 ? cluster.x + cluster.width * 0.5 - 7 : cluster.x - cluster.width * 0.5 + 7;
+    const signHeading = 16384;
+    const signZOffsets = [-18, 0, 18];
+    const signHeights = [14, 18, 12];
+
+    for (let i = 0; i < 3; i++) {
+      const [face, frame] =
+        signPalettes[(i + Math.abs(Math.round(cluster.z / 10))) % signPalettes.length];
+      addBoxBuilding(
+        specs,
+        `${cluster.name}-sign-${i}`,
+        signX,
+        18 + i * 22,
+        cluster.z + signZOffsets[i],
+        28 + i * 4,
+        4,
+        signHeights[i],
+        face,
+        frame,
+        signHeading
+      );
     }
+
+    addBoxBuilding(
+      specs,
+      `${cluster.name}-crown`,
+      cluster.x,
+      cluster.height,
+      cluster.z,
+      cluster.width * 0.24,
+      cluster.depth * 0.2,
+      10,
+      colorFromRGB(82, 84, 92),
+      colorFromRGB(60, 62, 70)
+    );
+  }
+
+  addWindowedBuilding(
+    specs,
+    "midtown-spire-west",
+    -520,
+    120,
+    72,
+    58,
+    240,
+    concreteDark,
+    graphiteRoof,
+    glassBlue,
+    0,
+    12,
+    4.5,
+    3.7,
+    2.4
+  );
+  addWindowedBuilding(
+    specs,
+    "midtown-spire-east",
+    520,
+    -80,
+    70,
+    56,
+    248,
+    concreteDark,
+    graphiteRoof,
+    glassTeal,
+    0,
+    12,
+    4.5,
+    3.7,
+    2.4
+  );
+  addWindowedBuilding(
+    specs,
+    "grand-central-block",
+    0,
+    520,
+    160,
+    90,
+    46,
+    limestone,
+    limestoneRoof,
+    glassWarm,
+    0,
+    5,
+    7.5,
+    4,
+    3
+  );
+  addWindowedBuilding(
+    specs,
+    "river-warehouse-1",
+    720,
+    -680,
+    124,
+    82,
+    20,
+    bronze,
+    bronzeRoof,
+    glassWarm,
+    0,
+    3,
+    6.5,
+    3.8,
+    3.4
+  );
+  addWindowedBuilding(
+    specs,
+    "river-warehouse-2",
+    760,
+    -500,
+    110,
+    76,
+    18,
+    bronze,
+    bronzeRoof,
+    glassWarm,
+    0,
+    3,
+    6.5,
+    3.8,
+    3.4
   );
 
-  // Filter out landmarks that overlap with water
-  const landmarkWaterRect = {
-    minX: -960 - 110,
-    maxX: -960 + 110,
-    minZ: -620 - 575,
-    maxZ: -620 + 575,
-  };
   const filteredSpecs = specs.filter((spec) => {
+    const bbox = spec.model.bbox;
+    const min = bbox[0];
+    const max = bbox[7];
+    const width = max.x - min.x;
+    const depth = max.z - min.z;
     const x = spec.pos.p.x;
     const z = spec.pos.p.z;
-
-    // Calculate landmark dimensions (approximate average size)
-    // This is a simplified check - for precise checking we'd need actual dimensions
-    const landmarkSize = 60; // Approximate average landmark size
-
-    // Calculate landmark bounds
-    const lMinX = x - landmarkSize * 0.5;
-    const lMaxX = x + landmarkSize * 0.5;
-    const lMinZ = z - landmarkSize * 0.5;
-    const lMaxZ = z + landmarkSize * 0.5;
-
-    // Check if landmark overlaps with water
-    if (
-      lMaxX > landmarkWaterRect.minX &&
-      lMinX < landmarkWaterRect.maxX &&
-      lMaxZ > landmarkWaterRect.minZ &&
-      lMinZ < landmarkWaterRect.maxZ
-    ) {
-      return false;
-    }
-    return true;
+    return !inWater(x, z, width, depth, 6);
   });
 
   return filteredSpecs.map((spec, index) => ({

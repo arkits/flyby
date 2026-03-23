@@ -33,6 +33,9 @@ to `FLYBY2`.
   variants today
 - raw and improved runway captures now show the authored PC2 markings again
   after restoring painter-ordered overlay drawing
+- the browser showcase track now includes a distinct `san-francisco` variant
+  that rides on `downtown.fld` with authored landmarks and sharper urban
+  ground breakup
 - the renderer now uploads static field geometry once instead of rebuilding it
   every frame
 - gameplay modes now use a fixed-step vehicle/camera/input runtime separate
@@ -145,6 +148,8 @@ allowed to look better on purpose.
 - Keep the environment-driven shader path in the browser-only track:
   - procedural sky gradients and cloud bands
   - restrained night-sky augmentations such as point-sampled stars and subtle aurora ribbons
+  - keep `airport-night` runway paint subdued enough that markings read as paint, not lighting
+  - let `airport-night` use denser multicolor approach / runway / taxiway lighting as showcase-only browser adaptation
   - fog / haze
   - hemisphere lighting
   - directional key light control
@@ -197,6 +202,11 @@ after Phases 0-3 are stable.
 
 Every item in this phase must remain clearly labeled as browser enhancement, not
 backfilled into parity claims.
+
+Current downtown status: the browser-authored variant now has a more Manhattan /
+Times Square-style core with fuller facade window coverage and a protected
+fly-through corridor, but the scene should still be treated as showcase work
+that needs continued capture review rather than a settled parity target.
 
 ## Verification Loop
 

@@ -108,6 +108,13 @@ runtime-only support data instead of a visible apron feature, and their
 browser-authored road network has been tightened into perimeter/service access
 roads rather than runway-crossing city blocks.
 
+The `?map=san-francisco` path is now explicitly routed through `downtown.fld`
+with browser-authored San Francisco showcase geometry: sharper procedural
+ground breakup, SF-style street/water overlays, and landmark stand-ins for the
+Salesforce Tower, Transamerica Pyramid, Golden Gate Bridge, Coit Tower, and
+the Ferry Building clock tower. That work is intentional browser adaptation,
+not parity evidence.
+
 ## Parity Matrix
 
 | Area                             | Original                                                                  | Current Port                                                                                             | Status                   |
@@ -215,6 +222,21 @@ The same adaptation track now includes authored airport-circulation cleanup for
 `airport-improved` / `airport-night`: the synthetic support roads stay on the
 apron and perimeter side of the field, and the small raw `sample.ter` patch is
 no longer rendered as a bright square in top-down inspection views.
+
+The `airport-night` showcase pass now also leans into a denser star field while
+keeping runway paint cooler and less emissive than the daytime browser
+variants, so the strip reads more like reflected paint than self-lit markings.
+
+That same night pass now uses denser multicolor runway lighting and a heavier
+distant light field: amber edge lights, green threshold bars, red runway-end
+accents, blue taxiway lights, and warmer pole / horizon glows that are meant
+to read closer to photographed airport approaches than to sparse debug markers.
+
+The downtown adaptation track now also uses an authored Times Square-style
+core: denser showcase towers flank a protected north-south fly-through
+corridor, tall facades use adaptive full-height window grids, and recent
+straight / loop downtown checks report no SRF collision at the sampled capture
+frames. This remains browser-authored showcase work, not original-scene parity.
 
 ### 8. `flyby2_s` Inventory Now Matches `FLYBY2_S.INF`
 

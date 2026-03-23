@@ -167,6 +167,7 @@ describe("Environment ID functions", () => {
     expect(mapVariantId({ ...baseEnv, key: "airport-improved" as any })).toBe(1);
     expect(mapVariantId({ ...baseEnv, key: "airport-night" as any })).toBe(2);
     expect(mapVariantId({ ...baseEnv, key: "downtown" as any })).toBe(3);
+    expect(mapVariantId({ ...baseEnv, key: "san-francisco" as any })).toBe(4);
   });
 });
 
