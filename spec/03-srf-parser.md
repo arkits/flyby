@@ -64,6 +64,7 @@ For polygons where `backFaceRemove == BI_OFF`, recompute normal from vertices us
 ### Compute Smooth Vertex Normals (imodel.c:193-240)
 
 For each vertex:
+
 1. Find all faces that reference this vertex where:
    - `bright != BI_ON` (not unlit)
    - `backFaceRemove == BI_ON` (has face normal)
@@ -75,6 +76,7 @@ For each vertex:
 ### Constrain Twist (imodel.c:243-287)
 
 For each polygon with `backFaceRemove == BI_ON`:
+
 1. Build vertex position array from vertex IDs
 2. Call `twist3` to check winding direction vs normal
 3. If RIGHT-twisted, reverse the vertex order (swap[i] with [nVt-1-i])
@@ -84,6 +86,7 @@ For each polygon with `backFaceRemove == BI_ON`:
 ### Build Bounding Box (imodel.c:443-469)
 
 Find min/max across all vertices, create 8-corner box:
+
 ```
 bbox[0] = (min.x, min.y, min.z)
 bbox[1] = (max.x, min.y, min.z)
@@ -98,11 +101,11 @@ bbox[7] = (max.x, max.y, max.z)
 ## API
 
 ```typescript
-async function loadSrf(url: string): Promise<SrfModel>
-  // Fetch file from URL, parse text, return SrfModel
+async function loadSrf(url: string): Promise<SrfModel>;
+// Fetch file from URL, parse text, return SrfModel
 
-function parseSrfText(text: string): SrfModel
-  // Parse SRF text content directly
+function parseSrfText(text: string): SrfModel;
+// Parse SRF text content directly
 ```
 
 ## Example Data (A6.SRF, first few vertices and first face)
@@ -121,6 +124,7 @@ E
 ```
 
 Color 14607 = 0b001110010001111:
+
 - G = (14607 >> 10) & 31 = 0b00111 = 7 → 7/31 = 0.226
 - R = (14607 >> 5) & 31 = 0b00100 = 4 → 4/31 = 0.129
 - B = 14607 & 31 = 0b01111 = 15 → 15/31 = 0.484

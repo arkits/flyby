@@ -2,14 +2,37 @@
 // Replaces the OpenGL 1.x backend
 
 import type {
-  SrfModel, SrfPolygon, SrfVertex, PosAtt, Color, Vec3,
-  Field, Pc2, Pc2Object, Axis, Projection, GpuSrf, GpuField, Terrain, GpuPrimitive, MapEnvironment, WorldSnapshot, DynamicActorSnapshot,
-} from './types';
+  SrfModel,
+  SrfPolygon,
+  SrfVertex,
+  PosAtt,
+  Color,
+  Vec3,
+  Field,
+  Pc2,
+  Pc2Object,
+  Axis,
+  Projection,
+  GpuSrf,
+  GpuField,
+  Terrain,
+  GpuPrimitive,
+  MapEnvironment,
+  WorldSnapshot,
+  DynamicActorSnapshot,
+} from "./types";
 import {
-  vec3, getStdProjection, convLtoG, convGtoL, rotFastLtoG, rotFastGtoL,
-  makeTrigonomy, vectorToAngle, pitchUp,
-} from './math';
-import { SHADER_WGSL } from './shader.wgsl';
+  vec3,
+  getStdProjection,
+  convLtoG,
+  convGtoL,
+  rotFastLtoG,
+  rotFastGtoL,
+  makeTrigonomy,
+  vectorToAngle,
+  pitchUp,
+} from "./math";
+import { SHADER_WGSL } from "./shader.wgsl";
 
 // 13 floats per vertex: pos(3) + shadeNormal(3) + cullNormal(3) + color(3) + bright(1)
 const LIT_STRIDE = 13;
@@ -69,31 +92,64 @@ export class Renderer {
   groundVertCount = 0;
   groundBufferSize = { value: 0 };
 
-  // Reusable smoke buffers (to prevent memory leak)
-  smokeBuffer!: GPUBuffer;
-  smokeBufferSize = { value: 0 };
-  smokeLineBuffer!: GPUBuffer;
-  smokeLineBufferSize = { value: 0 };
-  vaporBuffer!: GPUBuffer;
-  vaporBufferSize = { value: 0 };
-  vaporLineBuffer!: GPUBuffer;
-  vaporLineBufferSize = { value: 0 };
+  // Ring buffer system for smoke/vapor to eliminate per-frame reallocation
+  private readonly RING_BUFFER_COUNT = 3;
+  private currentRingIndex = 0;
+  private smokeBufferRing: { buffer: GPUBuffer | null; size: number }[] = [];
+  private smokeLineBufferRing: { buffer: GPUBuffer | null; size: number }[] = [];
+  private vaporBufferRing: { buffer: GPUBuffer | null; size: number }[] = [];
+  private vaporLineBufferRing: { buffer: GPUBuffer | null; size: number }[] = [];
 
   private width = 0;
   private height = 0;
 
+  private initRingBuffers(): void {
+    this.smokeBufferRing = Array(this.RING_BUFFER_COUNT)
+      .fill(null)
+      .map(() => ({ buffer: null, size: 0 }));
+    this.smokeLineBufferRing = Array(this.RING_BUFFER_COUNT)
+      .fill(null)
+      .map(() => ({ buffer: null, size: 0 }));
+    this.vaporBufferRing = Array(this.RING_BUFFER_COUNT)
+      .fill(null)
+      .map(() => ({ buffer: null, size: 0 }));
+    this.vaporLineBufferRing = Array(this.RING_BUFFER_COUNT)
+      .fill(null)
+      .map(() => ({ buffer: null, size: 0 }));
+  }
+
+  private getRingBuffer(
+    ring: { buffer: GPUBuffer | null; size: number }[],
+    requiredSize: number
+  ): GPUBuffer {
+    const entry = ring[this.currentRingIndex];
+    if (!entry.buffer || entry.size < requiredSize) {
+      entry.buffer?.destroy();
+      entry.buffer = this.device.createBuffer({
+        size: Math.max(16, requiredSize),
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      entry.size = requiredSize;
+    }
+    return entry.buffer;
+  }
+
+  private advanceRingBuffer(): void {
+    this.currentRingIndex = (this.currentRingIndex + 1) % this.RING_BUFFER_COUNT;
+  }
+
   async init(canvas: HTMLCanvasElement): Promise<void> {
     const adapter = await navigator.gpu?.requestAdapter();
-    if (!adapter) throw new Error('WebGPU not available');
+    if (!adapter) throw new Error("WebGPU not available");
 
     this.device = await adapter.requestDevice();
     this.format = navigator.gpu.getPreferredCanvasFormat();
 
-    this.context = canvas.getContext('webgpu')!;
+    this.context = canvas.getContext("webgpu")!;
     this.context.configure({
       device: this.device,
       format: this.format,
-      alphaMode: 'premultiplied',
+      alphaMode: "premultiplied",
     });
 
     this.resize(canvas.width, canvas.height);
@@ -102,28 +158,32 @@ export class Renderer {
     const shaderModule = this.device.createShaderModule({ code: SHADER_WGSL });
 
     // Uniform buffer stores matrices plus environment lighting / fog / sky / ground parameters.
-    this.uniformStride = Math.ceil(
-      Renderer.UNIFORM_BYTE_SIZE / this.device.limits.minUniformBufferOffsetAlignment,
-    ) * this.device.limits.minUniformBufferOffsetAlignment;
+    this.uniformStride =
+      Math.ceil(Renderer.UNIFORM_BYTE_SIZE / this.device.limits.minUniformBufferOffsetAlignment) *
+      this.device.limits.minUniformBufferOffsetAlignment;
     this.uniformBuffer = this.device.createBuffer({
       size: this.uniformStride * Renderer.MAX_UNIFORM_DRAWS,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     this.uniformBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [{
-        binding: 0,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform', hasDynamicOffset: true },
-      }],
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform", hasDynamicOffset: true },
+        },
+      ],
     });
 
     this.uniformBindGroup = this.device.createBindGroup({
       layout: this.uniformBindGroupLayout,
-      entries: [{
-        binding: 0,
-        resource: { buffer: this.uniformBuffer, size: Renderer.UNIFORM_BYTE_SIZE },
-      }],
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this.uniformBuffer, size: Renderer.UNIFORM_BYTE_SIZE },
+        },
+      ],
     });
 
     const pipelineLayout = this.device.createPipelineLayout({
@@ -131,14 +191,14 @@ export class Renderer {
     });
     const smokeBlend: GPUBlendState = {
       color: {
-        srcFactor: 'src-alpha',
-        dstFactor: 'one-minus-src-alpha',
-        operation: 'add',
+        srcFactor: "src-alpha",
+        dstFactor: "one-minus-src-alpha",
+        operation: "add",
       },
       alpha: {
-        srcFactor: 'one',
-        dstFactor: 'one-minus-src-alpha',
-        operation: 'add',
+        srcFactor: "one",
+        dstFactor: "one-minus-src-alpha",
+        operation: "add",
       },
     };
 
@@ -147,29 +207,31 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsLit',
-        buffers: [{
-          arrayStride: LIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },  // position
-            { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
-            { shaderLocation: 2, offset: 24, format: 'float32x3' }, // cull normal
-            { shaderLocation: 3, offset: 36, format: 'float32x3' }, // color
-            { shaderLocation: 4, offset: 48, format: 'float32' },   // bright
-          ],
-        }],
+        entryPoint: "vsLit",
+        buffers: [
+          {
+            arrayStride: LIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" }, // position
+              { shaderLocation: 1, offset: 12, format: "float32x3" }, // normal
+              { shaderLocation: 2, offset: 24, format: "float32x3" }, // cull normal
+              { shaderLocation: 3, offset: 36, format: "float32x3" }, // color
+              { shaderLocation: 4, offset: 48, format: "float32" }, // bright
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsLit',
+        entryPoint: "fsLit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -177,29 +239,31 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsLit',
-        buffers: [{
-          arrayStride: LIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-            { shaderLocation: 2, offset: 24, format: 'float32x3' },
-            { shaderLocation: 3, offset: 36, format: 'float32x3' },
-            { shaderLocation: 4, offset: 48, format: 'float32' },
-          ],
-        }],
+        entryPoint: "vsLit",
+        buffers: [
+          {
+            arrayStride: LIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+              { shaderLocation: 2, offset: 24, format: "float32x3" },
+              { shaderLocation: 3, offset: 36, format: "float32x3" },
+              { shaderLocation: 4, offset: 48, format: "float32" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsLitOneSided',
+        entryPoint: "fsLitOneSided",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -207,29 +271,31 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsLit',
-        buffers: [{
-          arrayStride: LIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-            { shaderLocation: 2, offset: 24, format: 'float32x3' },
-            { shaderLocation: 3, offset: 36, format: 'float32x3' },
-            { shaderLocation: 4, offset: 48, format: 'float32' },
-          ],
-        }],
+        entryPoint: "vsLit",
+        buffers: [
+          {
+            arrayStride: LIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+              { shaderLocation: 2, offset: 24, format: "float32x3" },
+              { shaderLocation: 3, offset: 36, format: "float32x3" },
+              { shaderLocation: 4, offset: 48, format: "float32" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsActorLit',
+        entryPoint: "fsActorLit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -237,29 +303,31 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsLit',
-        buffers: [{
-          arrayStride: LIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-            { shaderLocation: 2, offset: 24, format: 'float32x3' },
-            { shaderLocation: 3, offset: 36, format: 'float32x3' },
-            { shaderLocation: 4, offset: 48, format: 'float32' },
-          ],
-        }],
+        entryPoint: "vsLit",
+        buffers: [
+          {
+            arrayStride: LIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+              { shaderLocation: 2, offset: 24, format: "float32x3" },
+              { shaderLocation: 3, offset: 36, format: "float32x3" },
+              { shaderLocation: 4, offset: 48, format: "float32" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsActorLitOneSided',
+        entryPoint: "fsActorLitOneSided",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -267,29 +335,31 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsLit',
-        buffers: [{
-          arrayStride: LIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-            { shaderLocation: 2, offset: 24, format: 'float32x3' },
-            { shaderLocation: 3, offset: 36, format: 'float32x3' },
-            { shaderLocation: 4, offset: 48, format: 'float32' },
-          ],
-        }],
+        entryPoint: "vsLit",
+        buffers: [
+          {
+            arrayStride: LIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+              { shaderLocation: 2, offset: 24, format: "float32x3" },
+              { shaderLocation: 3, offset: 36, format: "float32x3" },
+              { shaderLocation: 4, offset: 48, format: "float32" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsSmokeLit',
+        entryPoint: "fsSmokeLit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less',
-        format: 'depth24plus',
+        depthCompare: "less",
+        format: "depth24plus",
       },
     });
 
@@ -297,26 +367,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsShadowUnlit',
+        entryPoint: "fsShadowUnlit",
         targets: [{ format: this.format, blend: smokeBlend }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -325,26 +397,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: "fsUnlit",
         targets: [{ format: this.format, blend: smokeBlend }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -352,26 +426,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsGround',
+        entryPoint: "fsGround",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -379,28 +455,30 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsOverlay',
+        entryPoint: "fsOverlay",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         // Source-faithful PC2 maps are painter-ordered in BiOvwPc2, so later
         // runway markings must overwrite the base strip instead of z-fighting.
         depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
+        depthCompare: "always",
+        format: "depth24plus",
       },
     });
 
@@ -408,26 +486,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsOverlay',
+        entryPoint: "fsOverlay",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'line-list', cullMode: 'none' },
+      primitive: { topology: "line-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
+        depthCompare: "always",
+        format: "depth24plus",
       },
     });
 
@@ -435,26 +515,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsOverlay',
+        entryPoint: "fsOverlay",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'point-list', cullMode: 'none' },
+      primitive: { topology: "point-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
+        depthCompare: "always",
+        format: "depth24plus",
       },
     });
 
@@ -462,19 +544,19 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsSky',
+        entryPoint: "vsSky",
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsSky',
+        entryPoint: "fsSky",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: 'depth24plus',
+        depthCompare: "always",
+        format: "depth24plus",
       },
     });
 
@@ -483,26 +565,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsSmokeUnlit',
+        entryPoint: "fsSmokeUnlit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'line-list', cullMode: 'none' },
+      primitive: { topology: "line-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -510,26 +594,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: "fsUnlit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'line-list', cullMode: 'none' },
+      primitive: { topology: "line-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
@@ -537,26 +623,28 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: "fsUnlit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'line-list', cullMode: 'none' },
+      primitive: { topology: "line-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less',
-        format: 'depth24plus',
+        depthCompare: "less",
+        format: "depth24plus",
       },
     });
 
@@ -564,30 +652,34 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsUnlit',
-        buffers: [{
-          arrayStride: UNLIT_STRIDE * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          ],
-        }],
+        entryPoint: "vsUnlit",
+        buffers: [
+          {
+            arrayStride: UNLIT_STRIDE * 4,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" },
+              { shaderLocation: 1, offset: 12, format: "float32x3" },
+            ],
+          },
+        ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fsUnlit',
+        entryPoint: "fsUnlit",
         targets: [{ format: this.format }],
       },
-      primitive: { topology: 'point-list', cullMode: 'none' },
+      primitive: { topology: "point-list", cullMode: "none" },
       multisample: { count: SAMPLE_COUNT },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
+        depthCompare: "less-equal",
+        format: "depth24plus",
       },
     });
 
     this.buildGridBuffer();
+
+    this.initRingBuffers();
   }
 
   resize(w: number, h: number): void {
@@ -608,7 +700,7 @@ export class Renderer {
     this.depthTexture = this.device.createTexture({
       size: [w, h],
       sampleCount: SAMPLE_COUNT,
-      format: 'depth24plus',
+      format: "depth24plus",
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
   }
@@ -626,7 +718,12 @@ export class Renderer {
     return buf;
   }
 
-  private updateOrCreateBuffer(data: Float32Array, currentBuf: GPUBuffer, sizePtr: {value: number}, _name: string): GPUBuffer {
+  private updateOrCreateBuffer(
+    data: Float32Array,
+    currentBuf: GPUBuffer,
+    sizePtr: { value: number },
+    _name: string
+  ): GPUBuffer {
     const byteLength = data.byteLength;
     if (currentBuf && byteLength <= sizePtr.value) {
       // Reuse existing buffer
@@ -696,7 +793,7 @@ export class Renderer {
         overlayPointsBufferSize: Math.max(16, staticScene.overlay.points.byteLength),
       };
     } catch (error) {
-      const wrapped = new Error('Failed to assemble field GPU buffers.');
+      const wrapped = new Error("Failed to assemble field GPU buffers.");
       (wrapped as Error & { cause?: unknown }).cause = error;
       throw wrapped;
     }
@@ -716,7 +813,7 @@ export class Renderer {
     model: Float32Array,
     eye: PosAtt,
     prj: Projection,
-    environment: MapEnvironment,
+    environment: MapEnvironment
   ): Float32Array {
     const basis = getCameraBasis(eye);
     const data = new Float32Array(Renderer.UNIFORM_FLOAT_COUNT);
@@ -727,14 +824,21 @@ export class Renderer {
     writeVec4(data, 36, basis.up.x, basis.up.y, basis.up.z, 0);
     writeVec4(data, 40, basis.forward.x, basis.forward.y, basis.forward.z, 0);
     writeVec4(data, 44, eye.p.x, eye.p.y, eye.p.z, 0);
-    writeVec4(data, 48, (this.width * 0.5) / prj.magx, (this.height * 0.5) / prj.magy, this.width, this.height);
+    writeVec4(
+      data,
+      48,
+      (this.width * 0.5) / prj.magx,
+      (this.height * 0.5) / prj.magy,
+      this.width,
+      this.height
+    );
     writeVec4(
       data,
       52,
       environment.keyLight.direction.x,
       environment.keyLight.direction.y,
       environment.keyLight.direction.z,
-      environment.keyLight.intensity,
+      environment.keyLight.intensity
     );
     writeColor4(data, 56, environment.keyLight.color, environment.keyLight.shadowStrength);
     writeColor4(data, 60, environment.hemisphere.skyColor, environment.hemisphere.intensity);
@@ -746,7 +850,7 @@ export class Renderer {
       environment.fog.start,
       environment.fog.end,
       environment.fog.density,
-      environment.fog.heightFalloff,
+      environment.fog.heightFalloff
     );
     writeColor4(data, 76, environment.sky.topColor, 0);
     writeColor4(data, 80, environment.sky.horizonColor, 0);
@@ -760,7 +864,7 @@ export class Renderer {
       environment.cloud.coverage,
       environment.cloud.softness,
       environment.cloud.scale,
-      environment.cloud.bandScale,
+      environment.cloud.bandScale
     );
     writeVec4(
       data,
@@ -768,7 +872,7 @@ export class Renderer {
       environment.cloud.speed,
       environment.cloud.density,
       environment.cloud.height,
-      0,
+      0
     );
     writeColor4(data, 108, environment.ground.primary, 0);
     writeColor4(data, 112, environment.ground.secondary, 0);
@@ -780,7 +884,7 @@ export class Renderer {
       environment.ground.detailScale,
       environment.ground.breakupScale,
       environment.ground.stripScale,
-      environment.ground.patchScale,
+      environment.ground.patchScale
     );
     writeVec4(
       data,
@@ -788,7 +892,7 @@ export class Renderer {
       environment.ground.pavementBias,
       environment.ground.shoulderDepth,
       mapVariantId(environment),
-      0,
+      0
     );
     writeColor4(data, 132, environment.emissive.color, 0);
     writeVec4(
@@ -797,7 +901,7 @@ export class Renderer {
       environment.emissive.strength,
       environment.emissive.threshold,
       environment.emissive.saturationBoost,
-      0,
+      0
     );
     return data;
   }
@@ -809,7 +913,7 @@ export class Renderer {
     model: Float32Array,
     eye: PosAtt,
     prj: Projection,
-    environment: MapEnvironment,
+    environment: MapEnvironment
   ): void {
     const slot = slotRef.value;
     if (slot >= Renderer.MAX_UNIFORM_DRAWS) {
@@ -853,7 +957,7 @@ export class Renderer {
         groundPlaneVerts,
         this.groundBuffer,
         this.groundBufferSize,
-        'ground-plane',
+        "ground-plane"
       );
       this.groundVertCount = groundPlaneVerts.length / UNLIT_STRIDE;
     } else {
@@ -861,23 +965,25 @@ export class Renderer {
     }
 
     const passEncoder = commandEncoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.colorTexture.createView(),
-        resolveTarget: textureView,
-        clearValue: {
-          r: environment.sky.topColor.r,
-          g: environment.sky.topColor.g,
-          b: environment.sky.topColor.b,
-          a: 1,
+      colorAttachments: [
+        {
+          view: this.colorTexture.createView(),
+          resolveTarget: textureView,
+          clearValue: {
+            r: environment.sky.topColor.r,
+            g: environment.sky.topColor.g,
+            b: environment.sky.topColor.b,
+            a: 1,
+          },
+          loadOp: "clear",
+          storeOp: "store",
         },
-        loadOp: 'clear',
-        storeOp: 'store',
-      }],
+      ],
       depthStencilAttachment: {
         view: this.depthTexture.createView(),
         depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
       },
     });
 
@@ -960,59 +1066,58 @@ export class Renderer {
     // --- Draw smoke after aircraft so depth testing handles front/behind
     // layering instead of forcing the aircraft to always sit on top.
     if (smokeGeometry.lit.length > 0) {
-      this.smokeBuffer = this.updateOrCreateBuffer(
-        smokeGeometry.lit,
-        this.smokeBuffer,
-        this.smokeBufferSize,
-        'smoke',
-      );
+      const smokeBuffer = this.getRingBuffer(this.smokeBufferRing, smokeGeometry.lit.byteLength);
+      this.device.queue.writeBuffer(smokeBuffer, 0, smokeGeometry.lit as Float32Array<ArrayBuffer>);
       this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLitPipeline);
-      passEncoder.setVertexBuffer(0, this.smokeBuffer);
+      passEncoder.setVertexBuffer(0, smokeBuffer);
       passEncoder.draw(smokeGeometry.lit.length / LIT_STRIDE);
     }
 
     if (smokeGeometry.lines.length > 0) {
-      this.smokeLineBuffer = this.updateOrCreateBuffer(
-        smokeGeometry.lines,
-        this.smokeLineBuffer,
-        this.smokeLineBufferSize,
-        'smoke-lines',
+      const smokeLineBuffer = this.getRingBuffer(
+        this.smokeLineBufferRing,
+        smokeGeometry.lines.byteLength
+      );
+      this.device.queue.writeBuffer(
+        smokeLineBuffer,
+        0,
+        smokeGeometry.lines as Float32Array<ArrayBuffer>
       );
       this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLinePipeline);
-      passEncoder.setVertexBuffer(0, this.smokeLineBuffer);
+      passEncoder.setVertexBuffer(0, smokeLineBuffer);
       passEncoder.draw(smokeGeometry.lines.length / UNLIT_STRIDE);
     }
 
     if (vaporGeometry.lit.length > 0) {
-      this.vaporBuffer = this.updateOrCreateBuffer(
-        vaporGeometry.lit,
-        this.vaporBuffer,
-        this.vaporBufferSize,
-        'vapor',
-      );
+      const vaporBuffer = this.getRingBuffer(this.vaporBufferRing, vaporGeometry.lit.byteLength);
+      this.device.queue.writeBuffer(vaporBuffer, 0, vaporGeometry.lit as Float32Array<ArrayBuffer>);
       this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLitPipeline);
-      passEncoder.setVertexBuffer(0, this.vaporBuffer);
+      passEncoder.setVertexBuffer(0, vaporBuffer);
       passEncoder.draw(vaporGeometry.lit.length / LIT_STRIDE);
     }
 
     if (vaporGeometry.lines.length > 0) {
-      this.vaporLineBuffer = this.updateOrCreateBuffer(
-        vaporGeometry.lines,
-        this.vaporLineBuffer,
-        this.vaporLineBufferSize,
-        'vapor-lines',
+      const vaporLineBuffer = this.getRingBuffer(
+        this.vaporLineBufferRing,
+        vaporGeometry.lines.byteLength
+      );
+      this.device.queue.writeBuffer(
+        vaporLineBuffer,
+        0,
+        vaporGeometry.lines as Float32Array<ArrayBuffer>
       );
       this.bindFrameUniforms(passEncoder, uniformSlot, viewProj, identity, eye, prj, environment);
       passEncoder.setPipeline(this.smokeLinePipeline);
-      passEncoder.setVertexBuffer(0, this.vaporLineBuffer);
+      passEncoder.setVertexBuffer(0, vaporLineBuffer);
       passEncoder.draw(vaporGeometry.lines.length / UNLIT_STRIDE);
     }
 
     passEncoder.end();
     this.device.queue.submit([commandEncoder.finish()]);
+    this.advanceRingBuffer();
   }
 
   private drawDynamicActor(
@@ -1022,18 +1127,20 @@ export class Renderer {
     viewProj: Float32Array,
     eye: PosAtt,
     prj: Projection,
-    environment: MapEnvironment,
+    environment: MapEnvironment
   ): void {
     const modelMatrix = buildModelMatrix(actor.transform);
     if (actor.gpuModel.twoSided.vertexCount > 0) {
       this.bindFrameUniforms(passEncoder, slotRef, viewProj, modelMatrix, eye, prj, environment);
-      passEncoder.setPipeline(actor.kind === 'aircraft' ? this.actorLitPipeline : this.litPipeline);
+      passEncoder.setPipeline(actor.kind === "aircraft" ? this.actorLitPipeline : this.litPipeline);
       passEncoder.setVertexBuffer(0, actor.gpuModel.twoSided.buffer);
       passEncoder.draw(actor.gpuModel.twoSided.vertexCount);
     }
     if (actor.gpuModel.oneSided.vertexCount > 0) {
       this.bindFrameUniforms(passEncoder, slotRef, viewProj, modelMatrix, eye, prj, environment);
-      passEncoder.setPipeline(actor.kind === 'aircraft' ? this.actorLitCulledPipeline : this.litCulledPipeline);
+      passEncoder.setPipeline(
+        actor.kind === "aircraft" ? this.actorLitCulledPipeline : this.litCulledPipeline
+      );
       passEncoder.setVertexBuffer(0, actor.gpuModel.oneSided.buffer);
       passEncoder.draw(actor.gpuModel.oneSided.vertexCount);
     }
@@ -1042,75 +1149,93 @@ export class Renderer {
 
 // --- Geometry Helpers ---
 
-function writeVec4(data: Float32Array, offset: number, x: number, y: number, z: number, w: number): void {
+export function writeVec4(
+  data: Float32Array,
+  offset: number,
+  x: number,
+  y: number,
+  z: number,
+  w: number
+): void {
   data[offset] = x;
   data[offset + 1] = y;
   data[offset + 2] = z;
   data[offset + 3] = w;
 }
 
-function writeColor4(data: Float32Array, offset: number, color: Color, w: number): void {
+export function writeColor4(data: Float32Array, offset: number, color: Color, w: number): void {
   writeVec4(data, offset, color.r, color.g, color.b, w);
 }
 
-function skyModeId(environment: MapEnvironment): number {
+export function skyModeId(environment: MapEnvironment): number {
   switch (environment.sky.mode) {
-    case 'night':
+    case "night":
       return 1;
-    case 'hazy':
+    case "hazy":
       return 2;
-    case 'clear':
+    case "clear":
     default:
       return 0;
   }
 }
 
-function mapVariantId(environment: MapEnvironment): number {
+export function mapVariantId(environment: MapEnvironment): number {
   switch (environment.key) {
-    case 'airport-improved':
+    case "airport-improved":
       return 1;
-    case 'airport-night':
+    case "airport-night":
       return 2;
-    case 'downtown':
+    case "downtown":
       return 3;
-    case 'airport':
+    case "airport":
     default:
       return 0;
   }
 }
 
-function pushLitVert(
-  verts: number[], p: Vec3, n: Vec3, cullNormal: Vec3, c: Color, bright: number,
+export function pushLitVert(
+  verts: number[],
+  p: Vec3,
+  n: Vec3,
+  cullNormal: Vec3,
+  c: Color,
+  bright: number
 ): void {
   verts.push(
-    p.x, p.y, p.z,
-    n.x, n.y, n.z,
-    cullNormal.x, cullNormal.y, cullNormal.z,
-    c.r, c.g, c.b,
-    bright,
+    p.x,
+    p.y,
+    p.z,
+    n.x,
+    n.y,
+    n.z,
+    cullNormal.x,
+    cullNormal.y,
+    cullNormal.z,
+    c.r,
+    c.g,
+    c.b,
+    bright
   );
 }
 
-function pushUnlitTri(
-  verts: number[], p0: Vec3, p1: Vec3, p2: Vec3, c: Color,
-): void {
+export function pushUnlitTri(verts: number[], p0: Vec3, p1: Vec3, p2: Vec3, c: Color): void {
   verts.push(p0.x, p0.y, p0.z, c.r, c.g, c.b);
   verts.push(p1.x, p1.y, p1.z, c.r, c.g, c.b);
   verts.push(p2.x, p2.y, p2.z, c.r, c.g, c.b);
 }
 
-function pushUnlitLine(verts: number[], p0: Vec3, p1: Vec3, c: Color): void {
+export function pushUnlitLine(verts: number[], p0: Vec3, p1: Vec3, c: Color): void {
   verts.push(p0.x, p0.y, p0.z, c.r, c.g, c.b);
   verts.push(p1.x, p1.y, p1.z, c.r, c.g, c.b);
 }
 
-function pushUnlitPoint(verts: number[], p: Vec3, c: Color): void {
+export function pushUnlitPoint(verts: number[], p: Vec3, c: Color): void {
   verts.push(p.x, p.y, p.z, c.r, c.g, c.b);
 }
 
-type ShadowPoint = { x: number; z: number };
+export type ShadowPoint = { x: number; z: number };
 
-function projectShadowPoint(point: Vec3, lightDirection: Vec3): ShadowPoint | null {
+export function projectShadowPoint(point: Vec3, lightDirection: Vec3): ShadowPoint | null {
   const shadowDirection = vec3(-lightDirection.x, -lightDirection.y, -lightDirection.z);
   if (Math.abs(shadowDirection.y) <= 1e-6) {
     return null;
@@ -1125,19 +1250,22 @@ function projectShadowPoint(point: Vec3, lightDirection: Vec3): ShadowPoint | nu
   };
 }
 
-function shadowCross(o: ShadowPoint, a: ShadowPoint, b: ShadowPoint): number {
-  return ((a.x - o.x) * (b.z - o.z)) - ((a.z - o.z) * (b.x - o.x));
+export function shadowCross(o: ShadowPoint, a: ShadowPoint, b: ShadowPoint): number {
+  return (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
 }
 
-function buildShadowHull(points: ShadowPoint[]): ShadowPoint[] {
+export function buildShadowHull(points: ShadowPoint[]): ShadowPoint[] {
   if (points.length < 3) {
     return [];
   }
 
-  const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.z - b.z));
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
   const lower: ShadowPoint[] = [];
   for (const point of sorted) {
-    while (lower.length >= 2 && shadowCross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+    while (
+      lower.length >= 2 &&
+      shadowCross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0
+    ) {
       lower.pop();
     }
     lower.push(point);
@@ -1146,7 +1274,10 @@ function buildShadowHull(points: ShadowPoint[]): ShadowPoint[] {
   const upper: ShadowPoint[] = [];
   for (let i = sorted.length - 1; i >= 0; i--) {
     const point = sorted[i];
-    while (upper.length >= 2 && shadowCross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+    while (
+      upper.length >= 2 &&
+      shadowCross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0
+    ) {
       upper.pop();
     }
     upper.push(point);
@@ -1157,14 +1288,19 @@ function buildShadowHull(points: ShadowPoint[]): ShadowPoint[] {
   return [...lower, ...upper];
 }
 
-function triangulateSrfShadow(verts: number[], model: SrfModel, pos: PosAtt, lightDirection: Vec3): void {
+function triangulateSrfShadow(
+  verts: number[],
+  model: SrfModel,
+  pos: PosAtt,
+  lightDirection: Vec3
+): void {
   if (model.bbox.length === 0) {
     return;
   }
 
   const min = model.bbox[0];
   const max = model.bbox[7];
-  if ((max.y - min.y) < 1) {
+  if (max.y - min.y < 1) {
     return;
   }
 
@@ -1191,12 +1327,12 @@ function triangulateSrfShadow(verts: number[], model: SrfModel, pos: PosAtt, lig
       anchor,
       vec3(hull[i].x, SHADOW_GROUND_Y, hull[i].z),
       vec3(hull[i + 1].x, SHADOW_GROUND_Y, hull[i + 1].z),
-      SHADOW_COLOR,
+      SHADOW_COLOR
     );
   }
 }
 
-function getCameraBasis(eye: PosAtt): { right: Vec3; up: Vec3; forward: Vec3 } {
+export function getCameraBasis(eye: PosAtt): { right: Vec3; up: Vec3; forward: Vec3 } {
   const t = makeTrigonomy(eye.a);
   const right = vec3(0, 0, 0);
   const up = vec3(0, 0, 0);
@@ -1207,7 +1343,7 @@ function getCameraBasis(eye: PosAtt): { right: Vec3; up: Vec3; forward: Vec3 } {
   return { right, up, forward };
 }
 
-function buildGroundRingGeometry(eye: PosAtt, groundColor: Color): Float32Array {
+export function buildGroundRingGeometry(eye: PosAtt, groundColor: Color): Float32Array {
   const verts: number[] = [];
   const centerX = Math.round(eye.p.x / 120) * 120;
   const centerZ = Math.round(eye.p.z / 120) * 120;
@@ -1221,9 +1357,9 @@ function buildGroundRingGeometry(eye: PosAtt, groundColor: Color): Float32Array 
 
     for (let zIndex = 0; zIndex < segments; zIndex++) {
       for (let xIndex = 0; xIndex < segments; xIndex++) {
-        const x0 = -outer + (xIndex * step);
+        const x0 = -outer + xIndex * step;
         const x1 = x0 + step;
-        const z0 = -outer + (zIndex * step);
+        const z0 = -outer + zIndex * step;
         const z1 = z0 + step;
 
         if (inner > 0 && x0 >= -inner && x1 <= inner && z0 >= -inner && z1 <= inner) {
@@ -1245,18 +1381,17 @@ function buildGroundRingGeometry(eye: PosAtt, groundColor: Color): Float32Array 
   return new Float32Array(verts);
 }
 
-
 function pushSrfVertex(
   verts: number[],
   vertex: SrfVertex,
   plg: SrfPolygon,
-  useSmoothNormal: boolean,
+  useSmoothNormal: boolean
 ): void {
   const normal = useSmoothNormal ? vertex.normal : plg.normal;
   pushLitVert(verts, vertex.pos, normal, plg.normal, plg.color, plg.bright);
 }
 
-function projectPolygonPoint(point: Vec3, normal: Vec3): { x: number; y: number } {
+export function projectPolygonPoint(point: Vec3, normal: Vec3): { x: number; y: number } {
   const ax = Math.abs(normal.x);
   const ay = Math.abs(normal.y);
   const az = Math.abs(normal.z);
@@ -1269,34 +1404,34 @@ function projectPolygonPoint(point: Vec3, normal: Vec3): { x: number; y: number 
   return { x: point.x, y: point.y };
 }
 
-function polygonCross2d(
+export function polygonCross2d(
   a: { x: number; y: number },
   b: { x: number; y: number },
-  c: { x: number; y: number },
+  c: { x: number; y: number }
 ): number {
-  return ((b.x - a.x) * (c.y - a.y)) - ((b.y - a.y) * (c.x - a.x));
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-function polygonArea2d(points: { x: number; y: number }[]): number {
+export function polygonArea2d(points: { x: number; y: number }[]): number {
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const current = points[i];
     const next = points[(i + 1) % points.length];
-    area += (current.x * next.y) - (next.x * current.y);
+    area += current.x * next.y - next.x * current.y;
   }
   return area * 0.5;
 }
 
-function samePoint2d(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+export function samePoint2d(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
   return Math.abs(a.x - b.x) <= POLYGON_EPSILON && Math.abs(a.y - b.y) <= POLYGON_EPSILON;
 }
 
-function pointInTriangle2d(
+export function pointInTriangle2d(
   point: { x: number; y: number },
   a: { x: number; y: number },
   b: { x: number; y: number },
   c: { x: number; y: number },
-  orientation: number,
+  orientation: number
 ): boolean {
   const ab = polygonCross2d(a, b, point) * orientation;
   const bc = polygonCross2d(b, c, point) * orientation;
@@ -1304,7 +1439,7 @@ function pointInTriangle2d(
   return ab >= -POLYGON_EPSILON && bc >= -POLYGON_EPSILON && ca >= -POLYGON_EPSILON;
 }
 
-function triangulatePolygonIndices(points: { x: number; y: number }[]): number[] {
+export function triangulatePolygonIndices(points: { x: number; y: number }[]): number[] {
   const deduped: number[] = [];
   for (let i = 0; i < points.length; i++) {
     if (deduped.length === 0 || !samePoint2d(points[deduped[deduped.length - 1]], points[i])) {
@@ -1330,7 +1465,7 @@ function triangulatePolygonIndices(points: { x: number; y: number }[]): number[]
     return deduped;
   }
 
-  const polygon = deduped.map(index => points[index]);
+  const polygon = deduped.map((index) => points[index]);
   const orientation = polygonArea2d(polygon) >= 0 ? 1 : -1;
   const remaining = [...deduped];
   const triangles: number[] = [];
@@ -1346,7 +1481,7 @@ function triangulatePolygonIndices(points: { x: number; y: number }[]): number[]
       const a = points[prev];
       const b = points[current];
       const c = points[next];
-      if ((polygonCross2d(a, b, c) * orientation) <= POLYGON_EPSILON) {
+      if (polygonCross2d(a, b, c) * orientation <= POLYGON_EPSILON) {
         continue;
       }
 
@@ -1389,7 +1524,9 @@ function getSrfPolygonTriangles(plg: SrfPolygon, vertices: SrfVertex[]): number[
     return cached;
   }
 
-  const points = plg.vertexIds.map(vertexId => projectPolygonPoint(vertices[vertexId].pos, plg.normal));
+  const points = plg.vertexIds.map((vertexId) =>
+    projectPolygonPoint(vertices[vertexId].pos, plg.normal)
+  );
   const triangles = triangulatePolygonIndices(points);
   srfTriangulationCache.set(plg, triangles);
   return triangles;
@@ -1410,7 +1547,7 @@ function triangulateSrfPolygon(
   oneSidedVerts: number[],
   twoSidedVerts: number[],
   plg: SrfPolygon,
-  vertices: SrfVertex[],
+  vertices: SrfVertex[]
 ): void {
   if (plg.nVt < 3) return;
   const dst = plg.backFaceRemove ? oneSidedVerts : twoSidedVerts;
@@ -1431,7 +1568,7 @@ function triangulateSrfPolygonTransformed(
   plg: SrfPolygon,
   vertices: SrfVertex[],
   pos: PosAtt,
-  eye: PosAtt | null,
+  eye: PosAtt | null
 ): void {
   if (plg.nVt < 3) return;
 
@@ -1441,11 +1578,10 @@ function triangulateSrfPolygonTransformed(
   if (eye !== null) {
     const worldCenter = vec3(0, 0, 0);
     convLtoG(worldCenter, plg.center, axs);
-    const faceDot = (
-      (worldCenter.x - eye.p.x) * faceNormal.x
-      + (worldCenter.y - eye.p.y) * faceNormal.y
-      + (worldCenter.z - eye.p.z) * faceNormal.z
-    );
+    const faceDot =
+      (worldCenter.x - eye.p.x) * faceNormal.x +
+      (worldCenter.y - eye.p.y) * faceNormal.y +
+      (worldCenter.z - eye.p.z) * faceNormal.z;
     if (plg.backFaceRemove !== 0 && faceDot > 0) {
       return;
     }
@@ -1467,7 +1603,7 @@ function triangulateSrfPolygonTransformed(
   }
 }
 
-interface PrimitiveBuckets {
+export interface PrimitiveBuckets {
   lit: number[];
   unlit: number[];
   lines: number[];
@@ -1479,34 +1615,55 @@ function triangulatePc2(
   pc2: Pc2,
   pos: PosAtt,
   layerBase: number,
-  eye: PosAtt | null,
+  eye: PosAtt | null
 ): void {
   const axs: Axis = { p: { ...pos.p }, a: { ...pos.a }, t: makeTrigonomy(pos.a) };
-  const eyeAxs = eye === null ? null : { p: { ...eye.p }, a: { ...eye.a }, t: makeTrigonomy(eye.a) };
+  const eyeAxs =
+    eye === null ? null : { p: { ...eye.p }, a: { ...eye.a }, t: makeTrigonomy(eye.a) };
   for (let objectIndex = 0; objectIndex < pc2.objects.length; objectIndex++) {
     const obj = pc2.objects[objectIndex];
-    if (eyeAxs !== null && !isPc2ObjectVisible(obj, axs, eyeAxs, layerBase + objectIndex * PC2_LAYER_STEP_Y)) {
+    if (
+      eyeAxs !== null &&
+      !isPc2ObjectVisible(obj, axs, eyeAxs, layerBase + objectIndex * PC2_LAYER_STEP_Y)
+    ) {
       continue;
     }
 
     switch (obj.type) {
-      case 'PLG':
+      case "PLG":
         triangulatePc2Polygon(buckets.unlit, obj, axs, layerBase + objectIndex * PC2_LAYER_STEP_Y);
         break;
-      case 'PLL':
-        triangulatePc2Polyline(buckets.lines, obj, axs, layerBase + objectIndex * PC2_LAYER_STEP_Y, true);
+      case "PLL":
+        triangulatePc2Polyline(
+          buckets.lines,
+          obj,
+          axs,
+          layerBase + objectIndex * PC2_LAYER_STEP_Y,
+          true
+        );
         break;
-      case 'LSQ':
-        triangulatePc2Polyline(buckets.lines, obj, axs, layerBase + objectIndex * PC2_LAYER_STEP_Y, false);
+      case "LSQ":
+        triangulatePc2Polyline(
+          buckets.lines,
+          obj,
+          axs,
+          layerBase + objectIndex * PC2_LAYER_STEP_Y,
+          false
+        );
         break;
-      case 'PST':
+      case "PST":
         triangulatePc2Points(buckets.points, obj, axs, layerBase + objectIndex * PC2_LAYER_STEP_Y);
         break;
     }
   }
 }
 
-function isPc2ObjectVisible(obj: Pc2Object, pc2Axs: Axis, eyeAxs: Axis, layerBase: number): boolean {
+export function isPc2ObjectVisible(
+  obj: Pc2Object,
+  pc2Axs: Axis,
+  eyeAxs: Axis,
+  layerBase: number
+): boolean {
   const worldCenter = vec3(0, 0, 0);
   convLtoG(worldCenter, vec3(obj.center.x, obj.center.y, layerBase), pc2Axs);
   const cameraCenter = vec3(0, 0, 0);
@@ -1518,7 +1675,12 @@ function isPc2ObjectVisible(obj: Pc2Object, pc2Axs: Axis, eyeAxs: Axis, layerBas
   );
 }
 
-function triangulatePc2Polygon(verts: number[], obj: Pc2Object, axs: Axis, layerBase: number): void {
+function triangulatePc2Polygon(
+  verts: number[],
+  obj: Pc2Object,
+  axs: Axis,
+  layerBase: number
+): void {
   if (obj.vertices.length < 3) return;
   const triangles = getPc2PolygonTriangles(obj);
   for (let i = 0; i < triangles.length; i += 3) {
@@ -1529,7 +1691,7 @@ function triangulatePc2Polygon(verts: number[], obj: Pc2Object, axs: Axis, layer
       layerBase,
       obj.vertices[triangles[i]],
       obj.vertices[triangles[i + 1]],
-      obj.vertices[triangles[i + 2]],
+      obj.vertices[triangles[i + 2]]
     );
   }
 }
@@ -1539,7 +1701,7 @@ function triangulatePc2Polyline(
   obj: Pc2Object,
   axs: Axis,
   layerBase: number,
-  closed: boolean,
+  closed: boolean
 ): void {
   const count = closed ? obj.vertices.length : obj.vertices.length - 1;
   for (let i = 0; i < count; i++) {
@@ -1563,7 +1725,7 @@ function pushPc2Segment(
   axs: Axis,
   layerBase: number,
   a: { x: number; y: number },
-  b: { x: number; y: number },
+  b: { x: number; y: number }
 ): void {
   const p0 = vec3(0, 0, 0);
   const p1 = vec3(0, 0, 0);
@@ -1579,7 +1741,7 @@ function pushPc2Tri(
   layerBase: number,
   a: { x: number; y: number },
   b: { x: number; y: number },
-  c: { x: number; y: number },
+  c: { x: number; y: number }
 ): void {
   const p0 = vec3(0, 0, 0);
   const p1 = vec3(0, 0, 0);
@@ -1591,17 +1753,22 @@ function pushPc2Tri(
   pushUnlitTri(verts, p0, p1, p2, obj.color);
 }
 
-function terrainBlockIndex(ter: Terrain, x: number, z: number): number {
+export function terrainBlockIndex(ter: Terrain, x: number, z: number): number {
   return z * (ter.xSiz + 1) + x;
 }
 
-function terrainPoint(ter: Terrain, x: number, z: number): Vec3 {
+export function terrainPoint(ter: Terrain, x: number, z: number): Vec3 {
   const blk = ter.blocks[terrainBlockIndex(ter, x, z)];
   return vec3(ter.xWid * x, blk.y, ter.zWid * z);
 }
 
 function pushTerrainTri(
-  verts: number[], p0: Vec3, p1: Vec3, p2: Vec3, color: Color, axs: Axis,
+  verts: number[],
+  p0: Vec3,
+  p1: Vec3,
+  p2: Vec3,
+  color: Color,
+  axs: Axis
 ): void {
   const tp0 = vec3(0, 0, 0);
   const tp1 = vec3(0, 0, 0);
@@ -1616,11 +1783,7 @@ function pushTerrainTri(
   const vx = tp1.x - tp0.x;
   const vy = tp1.y - tp0.y;
   const vz = tp1.z - tp0.z;
-  const n = vec3(
-    uy * vz - uz * vy,
-    uz * vx - ux * vz,
-    ux * vy - uy * vx,
-  );
+  const n = vec3(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
 
   pushLitVert(verts, tp0, n, n, color, 0);
   pushLitVert(verts, tp1, n, n, color, 0);
@@ -1700,7 +1863,7 @@ function triangulateTerrain(verts: number[], ter: Terrain, pos: PosAtt): void {
   }
 }
 
-function angleToVectors(att: PosAtt['a']): { eye: Vec3; up: Vec3 } {
+export function angleToVectors(att: PosAtt["a"]): { eye: Vec3; up: Vec3 } {
   const eye = vec3(0, 0, 1);
   const up = vec3(0, 1, 0);
   const t = makeTrigonomy(att);
@@ -1709,7 +1872,7 @@ function angleToVectors(att: PosAtt['a']): { eye: Vec3; up: Vec3 } {
   return { eye, up };
 }
 
-function composePosAtt(local: PosAtt, parent: PosAtt): PosAtt {
+export function composePosAtt(local: PosAtt, parent: PosAtt): PosAtt {
   const parentAxs: Axis = { p: { ...parent.p }, a: { ...parent.a }, t: makeTrigonomy(parent.a) };
   const { eye, up } = angleToVectors(local.a);
   const worldEye = vec3(0, 0, 0);
@@ -1726,28 +1889,32 @@ function composePosAtt(local: PosAtt, parent: PosAtt): PosAtt {
   return out;
 }
 
-function distanceSquared(a: Vec3, b: Vec3): number {
+export function distanceSquared(a: Vec3, b: Vec3): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   const dz = a.z - b.z;
   return dx * dx + dy * dy + dz * dz;
 }
 
-function isFiniteVec3(value: Vec3 | null | undefined): value is Vec3 {
-  return value !== null
-    && value !== undefined
-    && Number.isFinite(value.x)
-    && Number.isFinite(value.y)
-    && Number.isFinite(value.z);
+export function isFiniteVec3(value: Vec3 | null | undefined): value is Vec3 {
+  return (
+    value !== null &&
+    value !== undefined &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.z)
+  );
 }
 
-function isValidPosAtt(value: PosAtt | null | undefined): value is PosAtt {
-  return value !== null
-    && value !== undefined
-    && isFiniteVec3(value.p)
-    && Number.isFinite(value.a.h)
-    && Number.isFinite(value.a.p)
-    && Number.isFinite(value.a.b);
+export function isValidPosAtt(value: PosAtt | null | undefined): value is PosAtt {
+  return (
+    value !== null &&
+    value !== undefined &&
+    isFiniteVec3(value.p) &&
+    Number.isFinite(value.a.h) &&
+    Number.isFinite(value.a.p) &&
+    Number.isFinite(value.a.b)
+  );
 }
 
 function warnFieldGeometryOnce(key: string, message: string, payload: unknown): void {
@@ -1756,19 +1923,31 @@ function warnFieldGeometryOnce(key: string, message: string, payload: unknown): 
   console.warn(message, payload);
 }
 
-function composePosAttSafe(local: PosAtt | null | undefined, parent: PosAtt, label: string): PosAtt | null {
+function composePosAttSafe(
+  local: PosAtt | null | undefined,
+  parent: PosAtt,
+  label: string
+): PosAtt | null {
   if (!isValidPosAtt(local)) {
-    warnFieldGeometryOnce(label, `[renderer] Skipping field node with invalid local transform (${label}).`, local);
+    warnFieldGeometryOnce(
+      label,
+      `[renderer] Skipping field node with invalid local transform (${label}).`,
+      local
+    );
     return null;
   }
   if (!isValidPosAtt(parent)) {
-    warnFieldGeometryOnce(`${label}:parent`, `[renderer] Skipping field node with invalid parent transform (${label}).`, parent);
+    warnFieldGeometryOnce(
+      `${label}:parent`,
+      `[renderer] Skipping field node with invalid parent transform (${label}).`,
+      parent
+    );
     return null;
   }
   return composePosAtt(local, parent);
 }
 
-function isWithinLod(pos: PosAtt, lodDist: number, eye: PosAtt): boolean {
+export function isWithinLod(pos: PosAtt, lodDist: number, eye: PosAtt): boolean {
   if (!isValidPosAtt(pos) || !isValidPosAtt(eye)) {
     return false;
   }
@@ -1779,11 +1958,15 @@ function isWithinLod(pos: PosAtt, lodDist: number, eye: PosAtt): boolean {
   return distanceSquared(pos.p, eye.p) <= safeLodDist * safeLodDist;
 }
 
-function createPrimitiveBuckets(): PrimitiveBuckets {
+export function createPrimitiveBuckets(): PrimitiveBuckets {
   return { lit: [], unlit: [], lines: [], points: [] };
 }
 
-function buildFieldSceneGeometry(field: Field, eye: PosAtt | null, lightDirection: Vec3): {
+function buildFieldSceneGeometry(
+  field: Field,
+  eye: PosAtt | null,
+  lightDirection: Vec3
+): {
   scene: {
     lit: Float32Array;
     shadow: Float32Array;
@@ -1821,7 +2004,7 @@ function accumulateFieldGeometry(
   field: Field,
   fieldPos: PosAtt,
   eye: PosAtt | null,
-  lightDirection: Vec3,
+  lightDirection: Vec3
 ): void {
   for (const fsrf of field.srf) {
     const objPos = composePosAttSafe(fsrf.pos, fieldPos, `srf:${fsrf.fn}:${fsrf.id}`);
@@ -1856,7 +2039,11 @@ function accumulateFieldGeometry(
 
   for (const child of field.fld) {
     if (!child.fld) {
-      warnFieldGeometryOnce(`fld:${child.fn}:missing`, `[renderer] Skipping nested field with missing payload (${child.fn}).`, child);
+      warnFieldGeometryOnce(
+        `fld:${child.fn}:missing`,
+        `[renderer] Skipping nested field with missing payload (${child.fn}).`,
+        child
+      );
       continue;
     }
     const objPos = composePosAttSafe(child.pos, fieldPos, `fld:${child.fn}`);
@@ -1866,10 +2053,13 @@ function accumulateFieldGeometry(
   }
 }
 
-
 function composePc2OverlayPos(local: PosAtt, parent: PosAtt): PosAtt | null {
   if (!isValidPosAtt(local)) {
-    warnFieldGeometryOnce('pc2:invalid-transform', '[renderer] Skipping overlay with invalid transform.', local);
+    warnFieldGeometryOnce(
+      "pc2:invalid-transform",
+      "[renderer] Skipping overlay with invalid transform.",
+      local
+    );
     return null;
   }
   const pitched: PosAtt = {
@@ -1877,14 +2067,14 @@ function composePc2OverlayPos(local: PosAtt, parent: PosAtt): PosAtt | null {
     a: { ...local.a },
   };
   pitchUp(pitched.a, pitched.a, -16384, 0);
-  return composePosAttSafe(pitched, parent, 'pc2:overlay');
+  return composePosAttSafe(pitched, parent, "pc2:overlay");
 }
 
 // --- Matrix Construction ---
 // All matrices stored in COLUMN-MAJOR order for WebGPU/GLSL mat4.
 // GLSL m[col][row] maps to Float32Array[col*4 + row].
 
-function buildModelMatrix(pos: PosAtt): Float32Array {
+export function buildModelMatrix(pos: PosAtt): Float32Array {
   const trig = makeTrigonomy(pos.a);
   const right = vec3(0, 0, 0);
   const up = vec3(0, 0, 0);
@@ -1893,20 +2083,32 @@ function buildModelMatrix(pos: PosAtt): Float32Array {
   rotFastLtoG(up, vec3(0, 1, 0), trig);
   rotFastLtoG(forward, vec3(0, 0, 1), trig);
   return new Float32Array([
-    right.x, right.y, right.z, 0,
-    up.x, up.y, up.z, 0,
-    forward.x, forward.y, forward.z, 0,
-    pos.p.x, pos.p.y, pos.p.z, 1,
+    right.x,
+    right.y,
+    right.z,
+    0,
+    up.x,
+    up.y,
+    up.z,
+    0,
+    forward.x,
+    forward.y,
+    forward.z,
+    0,
+    pos.p.x,
+    pos.p.y,
+    pos.p.z,
+    1,
   ]);
 }
 
-function buildViewProjMatrix(eye: PosAtt, prj: Projection): Float32Array {
+export function buildViewProjMatrix(eye: PosAtt, prj: Projection): Float32Array {
   const viewMat = buildViewMatrix(eye);
   const projMat = buildPerspectiveMatrix(prj);
   return mat4Multiply(projMat, viewMat);
 }
 
-function buildViewMatrix(eye: PosAtt): Float32Array {
+export function buildViewMatrix(eye: PosAtt): Float32Array {
   const t = makeTrigonomy(eye.a);
   const rX = vec3(0, 0, 0);
   const rY = vec3(0, 0, 0);
@@ -1916,19 +2118,37 @@ function buildViewMatrix(eye: PosAtt): Float32Array {
   rotFastGtoL(rY, vec3(0, 1, 0), t);
   rotFastGtoL(rZ, vec3(0, 0, 1), t);
 
-  const m0 = rX.x, m4 = rY.x, m8 = rZ.x;
-  const m1 = rX.y, m5 = rY.y, m9 = rZ.y;
-  const m2 = rX.z, m6 = rY.z, m10 = rZ.z;
+  const m0 = rX.x,
+    m4 = rY.x,
+    m8 = rZ.x;
+  const m1 = rX.y,
+    m5 = rY.y,
+    m9 = rZ.y;
+  const m2 = rX.z,
+    m6 = rY.z,
+    m10 = rZ.z;
 
   const tx = -(m0 * eye.p.x + m4 * eye.p.y + m8 * eye.p.z);
   const ty = -(m1 * eye.p.x + m5 * eye.p.y + m9 * eye.p.z);
   const tz = -(m2 * eye.p.x + m6 * eye.p.y + m10 * eye.p.z);
 
   return new Float32Array([
-    m0, m1, m2, 0,
-    m4, m5, m6, 0,
-    m8, m9, m10, 0,
-    tx, ty, tz, 1, // Col 3
+    m0,
+    m1,
+    m2,
+    0,
+    m4,
+    m5,
+    m6,
+    0,
+    m8,
+    m9,
+    m10,
+    0,
+    tx,
+    ty,
+    tz,
+    1, // Col 3
   ]);
 }
 
@@ -1941,7 +2161,7 @@ export function debugViewTransform(point: Vec3, eye: PosAtt): Vec3 {
   };
 }
 
-function buildPerspectiveMatrix(prj: Projection): Float32Array {
+export function buildPerspectiveMatrix(prj: Projection): Float32Array {
   const left = prj.cx / prj.magx;
   const right = (prj.lx - prj.cx) / prj.magx;
   const up = prj.cy / prj.magy;
@@ -1955,22 +2175,34 @@ function buildPerspectiveMatrix(prj: Projection): Float32Array {
 
   // Match the original engine's positive-Z-forward perspective in WebGPU clip space.
   return new Float32Array([
-    sx, 0, 0, 0,
-    0, sy, 0, 0,
-    0, 0, far / (far - near), 1,
-    ox, oy, (-near * far) / (far - near), 0,
+    sx,
+    0,
+    0,
+    0,
+    0,
+    sy,
+    0,
+    0,
+    0,
+    0,
+    far / (far - near),
+    1,
+    ox,
+    oy,
+    (-near * far) / (far - near),
+    0,
   ]);
 }
 
-function mat4Multiply(a: Float32Array, b: Float32Array): Float32Array {
+export function mat4Multiply(a: Float32Array, b: Float32Array): Float32Array {
   // Standard 4x4 multiply with column-major indexing
   const out = new Float32Array(16);
   for (let j = 0; j < 4; j++) {
     for (let i = 0; i < 4; i++) {
       out[j * 4 + i] =
-        a[i]      * b[j * 4] +
-        a[4 + i]  * b[j * 4 + 1] +
-        a[8 + i]  * b[j * 4 + 2] +
+        a[i] * b[j * 4] +
+        a[4 + i] * b[j * 4 + 1] +
+        a[8 + i] * b[j * 4 + 2] +
         a[12 + i] * b[j * 4 + 3];
     }
   }

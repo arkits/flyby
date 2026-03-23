@@ -25,6 +25,14 @@ When working here, prefer source-faithful fixes over aesthetic rewrites.
   Start the Vite dev server for live inspection.
 - `bun run capture:parity -- <url> <output.png>`
   Capture a deterministic browser frame for parity review.
+- `bun run lint`
+  Run oxlint to check code quality.
+- `bun run lint:fix`
+  Run oxlint with auto-fix.
+- `bun run format`
+  Check code formatting with oxfmt.
+- `bun run format:fix`
+  Format code with oxfmt.
 
 ## Important Source Files
 
@@ -96,10 +104,11 @@ Use these as the source of truth when behavior is unclear:
 
 At minimum after non-trivial changes:
 
-1. Run `bun run build`.
-2. Inspect the running app in browser.
-3. If rendering/timing changed, capture a frame with `capture:parity`.
-4. Update `spec/` with the new status.
+1. Run `bun run lint` and `bun run format:fix`.
+2. Run `bun run build`.
+3. Inspect the running app in browser.
+4. If rendering/timing changed, capture a frame with `capture:parity`.
+5. Update `spec/` with the new status.
 
 ## Good Outcomes
 

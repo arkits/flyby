@@ -1,10 +1,6 @@
-import type {
-  Axis, Field, FieldSrf, PosAtt, Vec3,
-} from './types';
-import { getFieldElevation } from './field-runtime';
-import {
-  convLtoG, makeTrigonomy, rotFastLtoG, vec3, vectorToAngle,
-} from './math';
+import type { Axis, Field, FieldSrf, PosAtt, Vec3 } from "./types";
+import { getFieldElevation } from "./field-runtime";
+import { convLtoG, makeTrigonomy, rotFastLtoG, vec3, vectorToAngle } from "./math";
 
 interface StaticObstacle {
   id: string;
@@ -23,12 +19,12 @@ export interface RaycastHit {
   point: Vec3;
   normal: Vec3;
   distance: number;
-  kind: 'terrain' | 'obstacle';
+  kind: "terrain" | "obstacle";
   id: string;
 }
 
 function lerp(a: number, b: number, t: number): number {
-  return a + ((b - a) * t);
+  return a + (b - a) * t;
 }
 
 function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3 {
@@ -63,7 +59,7 @@ function normalizeVec3(value: Vec3): Vec3 {
   };
 }
 
-function angleToVectors(att: PosAtt['a']): { eye: Vec3; up: Vec3 } {
+function angleToVectors(att: PosAtt["a"]): { eye: Vec3; up: Vec3 } {
   const eye = vec3(0, 0, 1);
   const up = vec3(0, 1, 0);
   const trig = makeTrigonomy(att);
@@ -90,7 +86,7 @@ function composePosAtt(local: PosAtt, parent: PosAtt): PosAtt {
 }
 
 function buildObstacleId(path: string, fsrf: FieldSrf, index: number): string {
-  const tag = fsrf.tag ? `:${fsrf.tag}` : '';
+  const tag = fsrf.tag ? `:${fsrf.tag}` : "";
   return `${path}srf#${index}${tag}`;
 }
 
@@ -116,7 +112,7 @@ function flattenObstacles(
   field: Field,
   fieldPos: PosAtt,
   obstacles: StaticObstacle[],
-  path: string,
+  path: string
 ): void {
   field.srf.forEach((fsrf, index) => {
     const objectPos = composePosAtt(fsrf.pos, fieldPos);
@@ -135,7 +131,7 @@ function segmentAabbHit(start: Vec3, end: Vec3, obstacle: StaticObstacle): Rayca
   let tMax = 1;
   let normal = vec3(0, 0, 0);
 
-  const axes: Array<keyof Vec3> = ['x', 'y', 'z'];
+  const axes: Array<keyof Vec3> = ["x", "y", "z"];
   for (const axis of axes) {
     const origin = start[axis];
     const direction = delta[axis];
@@ -153,9 +149,9 @@ function segmentAabbHit(start: Vec3, end: Vec3, obstacle: StaticObstacle): Rayca
     let t0 = (min - origin) * inv;
     let t1 = (max - origin) * inv;
     let axisNormal = vec3(0, 0, 0);
-    if (axis === 'x') axisNormal = vec3(inv >= 0 ? -1 : 1, 0, 0);
-    if (axis === 'y') axisNormal = vec3(0, inv >= 0 ? -1 : 1, 0);
-    if (axis === 'z') axisNormal = vec3(0, 0, inv >= 0 ? -1 : 1);
+    if (axis === "x") axisNormal = vec3(inv >= 0 ? -1 : 1, 0, 0);
+    if (axis === "y") axisNormal = vec3(0, inv >= 0 ? -1 : 1, 0);
+    if (axis === "z") axisNormal = vec3(0, 0, inv >= 0 ? -1 : 1);
 
     if (t0 > t1) {
       const swap = t0;
@@ -184,7 +180,7 @@ function segmentAabbHit(start: Vec3, end: Vec3, obstacle: StaticObstacle): Rayca
     point,
     normal,
     distance: lengthVec3(subVec3(point, start)),
-    kind: 'obstacle',
+    kind: "obstacle",
     id: obstacle.id,
   };
 }
@@ -199,7 +195,7 @@ export class WorldQueryService {
   constructor(field: Field) {
     this.field = field;
     const obstacles: StaticObstacle[] = [];
-    flattenObstacles(field, this.root, obstacles, '');
+    flattenObstacles(field, this.root, obstacles, "");
     this.obstacles = obstacles;
   }
 
@@ -261,15 +257,18 @@ export class WorldQueryService {
           point: { x: hitPoint.x, y: hitSample.height, z: hitPoint.z },
           normal: hitSample.normal,
           distance: totalDistance * hi,
-          kind: 'terrain',
-          id: 'terrain',
+          kind: "terrain",
+          id: "terrain",
         };
         break;
       }
       previousOffset = offset;
     }
 
-    if (terrainHit !== null && (nearestObstacle === null || terrainHit.distance <= nearestObstacle.distance)) {
+    if (
+      terrainHit !== null &&
+      (nearestObstacle === null || terrainHit.distance <= nearestObstacle.distance)
+    ) {
       return terrainHit;
     }
     return nearestObstacle;

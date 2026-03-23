@@ -1,7 +1,5 @@
-import type {
-  Color, Field, MapEnvironment, MapVariant,
-} from './types';
-import { colorFromRGB } from './math';
+import type { Color, Field, MapEnvironment, MapVariant } from "./types";
+import { colorFromRGB } from "./math";
 
 function mixColor(a: Color, b: Color, t: number): Color {
   const clamped = Math.max(0, Math.min(1, t));
@@ -26,11 +24,11 @@ export function resolveMapEnvironment(mapVariant: MapVariant, field: Field): Map
   const fieldGround = field.gnd;
 
   switch (mapVariant) {
-    case 'airport':
+    case "airport":
       return {
         key: mapVariant,
         sky: {
-          mode: 'clear',
+          mode: "clear",
           topColor: fieldSky,
           horizonColor: fieldSky,
           bottomColor: fieldSky,
@@ -86,11 +84,11 @@ export function resolveMapEnvironment(mapVariant: MapVariant, field: Field): Map
           saturationBoost: 0,
         },
       };
-    case 'airport-improved':
+    case "airport-improved":
       return {
         key: mapVariant,
         sky: {
-          mode: 'clear',
+          mode: "clear",
           topColor: mixColor(fieldSky, colorFromRGB(92, 156, 218), 0.82),
           horizonColor: colorFromRGB(188, 214, 222),
           bottomColor: colorFromRGB(228, 214, 182),
@@ -146,11 +144,11 @@ export function resolveMapEnvironment(mapVariant: MapVariant, field: Field): Map
           saturationBoost: 0.12,
         },
       };
-    case 'airport-night':
+    case "airport-night":
       return {
         key: mapVariant,
         sky: {
-          mode: 'night',
+          mode: "night",
           topColor: mixColor(fieldSky, colorFromRGB(12, 20, 40), 0.84),
           horizonColor: colorFromRGB(34, 54, 92),
           bottomColor: colorFromRGB(16, 18, 24),
@@ -206,11 +204,11 @@ export function resolveMapEnvironment(mapVariant: MapVariant, field: Field): Map
           saturationBoost: 0.44,
         },
       };
-    case 'downtown':
+    case "downtown":
       return {
         key: mapVariant,
         sky: {
-          mode: 'hazy',
+          mode: "hazy",
           topColor: mixColor(fieldSky, colorFromRGB(82, 114, 156), 0.78),
           horizonColor: colorFromRGB(188, 196, 202),
           bottomColor: colorFromRGB(160, 166, 168),
@@ -266,11 +264,71 @@ export function resolveMapEnvironment(mapVariant: MapVariant, field: Field): Map
           saturationBoost: 0.18,
         },
       };
+    case "san-francisco":
+      return {
+        key: mapVariant,
+        sky: {
+          mode: "hazy",
+          topColor: colorFromRGB(110, 130, 170),
+          horizonColor: colorFromRGB(180, 190, 205),
+          bottomColor: colorFromRGB(160, 165, 170),
+          curve: 1.1,
+          glow: 0.1,
+        },
+        cloud: {
+          color: colorFromRGB(220, 225, 230),
+          shadowColor: colorFromRGB(150, 160, 170),
+          coverage: 0.65,
+          softness: 0.75,
+          scale: 0.0008,
+          bandScale: 1.5,
+          speed: 0.0004,
+          density: 0.55,
+          height: 0.4,
+        },
+        keyLight: {
+          direction: normalizeDirection(0.5, 0.6, -0.3),
+          color: colorFromRGB(255, 245, 220),
+          intensity: 0.85,
+          shadowStrength: 0.45,
+        },
+        hemisphere: {
+          skyColor: colorFromRGB(150, 170, 190),
+          groundColor: colorFromRGB(90, 95, 100),
+          intensity: 0.6,
+          balance: 0.6,
+        },
+        fog: {
+          color: colorFromRGB(180, 190, 205),
+          start: 800,
+          end: 4500,
+          density: 1.2,
+          heightFalloff: 0.0008,
+        },
+        ground: {
+          primary: colorFromRGB(50, 75, 120), // Deeper Bay Blue
+          secondary: colorFromRGB(100, 110, 90), // Natural Land Green
+          accent: colorFromRGB(170, 75, 55), // Bridge Orange
+          paved: colorFromRGB(65, 70, 75),
+          detailScale: 0.008,
+          breakupScale: 0.002,
+          stripScale: 0.008,
+          patchScale: 0.018,
+          pavementBias: 0.5,
+          shoulderDepth: 0.15,
+        },
+        emissive: {
+          color: colorFromRGB(255, 255, 255),
+          strength: 0.1,
+          threshold: 0.9,
+          saturationBoost: 0.2,
+        },
+      };
     default:
       return {
-        key: 'airport-improved',
+        key: "airport-improved",
         sky: {
-          mode: 'clear',
+          mode: "clear",
           topColor: mixColor(fieldSky, colorFromRGB(106, 158, 212), 0.72),
           horizonColor: colorFromRGB(176, 204, 214),
           bottomColor: colorFromRGB(212, 206, 172),

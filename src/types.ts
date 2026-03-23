@@ -22,9 +22,12 @@ export interface Attitude {
 }
 
 export interface TrigCache {
-  sinh: number; cosh: number;
-  sinp: number; cosp: number;
-  sinb: number; cosb: number;
+  sinh: number;
+  cosh: number;
+  sinp: number;
+  cosp: number;
+  sinb: number;
+  cosb: number;
 }
 
 export interface PosAtt {
@@ -91,7 +94,7 @@ export interface SrfModel {
 
 // --- PC2 (2D Picture) ---
 
-export type Pc2ObjectType = 'PST' | 'PLL' | 'LSQ' | 'PLG';
+export type Pc2ObjectType = "PST" | "PLL" | "LSQ" | "PLG";
 
 export interface Pc2Object {
   type: Pc2ObjectType;
@@ -241,14 +244,14 @@ export const BiVecY: Vec3 = { x: 0, y: 1, z: 0 };
 export const BiVecZ: Vec3 = { x: 0, y: 0, z: 1 };
 export const BiOrgPA: PosAtt = { p: { x: 0, y: 0, z: 0 }, a: { h: 0, p: 0, b: 0 } };
 
-export const BiBlack:   Color = { r: 0, g: 0, b: 0 };
-export const BiBlue:    Color = { r: 0, g: 0, b: 1 };
-export const BiRed:     Color = { r: 1, g: 0, b: 0 };
-export const BiGreen:   Color = { r: 0, g: 1, b: 0 };
-export const BiCyan:    Color = { r: 0, g: 1, b: 1 };
-export const BiYellow:  Color = { r: 1, g: 1, b: 0 };
+export const BiBlack: Color = { r: 0, g: 0, b: 0 };
+export const BiBlue: Color = { r: 0, g: 0, b: 1 };
+export const BiRed: Color = { r: 1, g: 0, b: 0 };
+export const BiGreen: Color = { r: 0, g: 1, b: 0 };
+export const BiCyan: Color = { r: 0, g: 1, b: 1 };
+export const BiYellow: Color = { r: 1, g: 1, b: 0 };
 export const BiMagenta: Color = { r: 1, g: 0, b: 1 };
-export const BiWhite:   Color = { r: 1, g: 1, b: 1 };
+export const BiWhite: Color = { r: 1, g: 1, b: 1 };
 
 // --- GPU Vertex Format ---
 
@@ -293,14 +296,19 @@ export interface Config {
   smokeType: number;
 }
 
-export type FlybyMode = 'flyby2' | 'flyby2_s';
-export type AppMode = 'scriptedFlyby' | 'freeFlight' | 'drive';
-export type MapVariant = 'airport' | 'airport-improved' | 'airport-night' | 'downtown';
-export type SkyMode = 'clear' | 'night' | 'hazy';
-export type FlybyCameraView = 'director' | 'thirdPerson' | 'topDown';
-export type FlybyTopDownMode = 'follow' | 'static';
-export type CameraMode = 'chase' | 'orbit' | 'cockpit';
-export type VehicleKind = 'aircraft' | 'car';
+export type FlybyMode = "flyby2" | "flyby2_s";
+export type AppMode = "scriptedFlyby" | "freeFlight" | "drive";
+export type MapVariant =
+  | "airport"
+  | "airport-improved"
+  | "airport-night"
+  | "downtown"
+  | "san-francisco";
+export type SkyMode = "clear" | "night" | "hazy";
+export type FlybyCameraView = "director" | "thirdPerson" | "topDown";
+export type FlybyTopDownMode = "follow" | "static";
+export type CameraMode = "chase" | "orbit" | "cockpit";
+export type VehicleKind = "aircraft" | "car";
 
 export interface SkySettings {
   mode: SkyMode;
@@ -376,17 +384,17 @@ export interface MapEnvironment {
   emissive: EmissiveAccentSettings;
 }
 export type CaptureScenario =
-  | 'straight'
-  | 'roll'
-  | 'loop'
-  | 'runway'
-  | 'signal'
-  | 'smoke_ribbon'
-  | 'smoke_wire'
-  | 'smoke_trail'
-  | 'smoke_solid';
+  | "straight"
+  | "roll"
+  | "loop"
+  | "runway"
+  | "signal"
+  | "smoke_ribbon"
+  | "smoke_wire"
+  | "smoke_trail"
+  | "smoke_solid";
 
-export type ManeuverKey = 'straight' | 'roll' | 'loop' | 'climb' | 'eight' | 'turn360';
+export type ManeuverKey = "straight" | "roll" | "loop" | "climb" | "eight" | "turn360";
 
 export interface RuntimeOptions {
   appMode: AppMode;
@@ -519,7 +527,7 @@ export interface ShowObj {
   aircraft: number;
 }
 
-export type ManeuverType = 'AHEAD' | 'PITCH' | 'BANK' | 'TURN';
+export type ManeuverType = "AHEAD" | "PITCH" | "BANK" | "TURN";
 
 export interface ManeuverState {
   type: ManeuverType;

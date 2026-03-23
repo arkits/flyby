@@ -2,16 +2,26 @@
 // Ported from ASMOKE.C
 
 import type {
-  SmokeClass, SmokeInst, SmokeNode, SmokeAttr,
-  PosAtt, Vec3, Color, Axis,
-} from './types';
+  SmokeClass,
+  SmokeInst,
+  SmokeNode,
+  SmokeAttr,
+  PosAtt,
+  Vec3,
+  Color,
+  Axis,
+} from "./types";
 import {
-  ARS_RIBBONSMOKE, ARS_TRAILSMOKE, ARS_WIRESMOKE,
-  ARS_MAX_TIP_PER_INST, ARS_SOLIDSMOKE, BiVecX, BiVecY, BiOrgP,
-} from './types';
-import {
-  vec3, addV3, subV3, mulV3, pntAngToAxis, rotFastLtoG,
-} from './math';
+  ARS_RIBBONSMOKE,
+  ARS_TRAILSMOKE,
+  ARS_WIRESMOKE,
+  ARS_MAX_TIP_PER_INST,
+  ARS_SOLIDSMOKE,
+  BiVecX,
+  BiVecY,
+  BiOrgP,
+} from "./types";
+import { vec3, addV3, subV3, mulV3, pntAngToAxis, rotFastLtoG } from "./math";
 
 const RIBBON_MAX_ALPHA = 0.32;
 const RIBBON_MIN_ALPHA = 0.06;
@@ -20,16 +30,18 @@ const SOLID_MIN_ALPHA = 0.08;
 
 export function initSmokeClass(sw: number): SmokeClass {
   const defAttr: SmokeAttr = {
-    t0: 0, t1: 1, iniw: 1, maxw: 1, dw: 0,
-    inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+    t0: 0,
+    t1: 1,
+    iniw: 1,
+    maxw: 1,
+    dw: 0,
+    inic: { r: 1, g: 1, b: 1 },
+    endc: { r: 1, g: 1, b: 1 },
+    tc: 0,
   };
   return {
     stp: [1, 2, 4],
-    bbx: [
-      vec3(200, 200, 200),
-      vec3(500, 500, 500),
-      vec3(500, 500, 500),
-    ],
+    bbx: [vec3(200, 200, 200), vec3(500, 500, 500), vec3(500, 500, 500)],
     sw,
     rbn: { ...defAttr },
     wir: { ...defAttr },
@@ -89,7 +101,7 @@ export function appendSmokeNode(inst: SmokeInst, pos: PosAtt, t: number): void {
     }
   }
 
-  const node: SmokeNode = { axs: {} as Axis, left: vec3(0,0,0), up: vec3(0,0,0), t };
+  const node: SmokeNode = { axs: {} as Axis, left: vec3(0, 0, 0), up: vec3(0, 0, 0), t };
   pntAngToAxis(node.axs, pos);
   rotFastLtoG(node.left, BiVecX, node.axs.t);
   rotFastLtoG(node.up, BiVecY, node.axs.t);
@@ -131,7 +143,13 @@ function getCurrentSmokeColor(att: SmokeAttr, rt: number): Color {
   return att.endc;
 }
 
-function smokeAlpha(att: SmokeAttr, rt0: number, rt1: number, maxAlpha: number, minAlpha: number): number {
+function smokeAlpha(
+  att: SmokeAttr,
+  rt0: number,
+  rt1: number,
+  maxAlpha: number,
+  minAlpha: number
+): number {
   const lifeSpan = Math.max(att.t1 - att.t0, 0.001);
   const age = Math.max(rt0, rt1);
   const fade = 1 - Math.min(Math.max((age - att.t0) / lifeSpan, 0), 1);
@@ -144,7 +162,9 @@ function pushTri(verts: number[], p0: Vec3, p1: Vec3, p2: Vec3, c: Color, alpha:
   const ny = (p1.z - p0.z) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.z - p0.z);
   const nz = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
   const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-  const nnx = nx / nl, nny = ny / nl, nnz = nz / nl;
+  const nnx = nx / nl,
+    nny = ny / nl,
+    nnz = nz / nl;
   for (const p of [p0, p1, p2]) {
     verts.push(p.x, p.y, p.z, nnx, nny, nnz, nnx, nny, nnz, c.r, c.g, c.b, alpha);
   }
@@ -156,8 +176,12 @@ function pushLine(verts: number[], p0: Vec3, p1: Vec3, c: Color): void {
 }
 
 function insRibbonSmoke(
-  att: SmokeAttr, node: SmokeNode[], n0: number, n1: number, t: number,
-  verts: number[],
+  att: SmokeAttr,
+  node: SmokeNode[],
+  n0: number,
+  n1: number,
+  t: number,
+  verts: number[]
 ): void {
   const rt0 = t - node[n0].t;
   const rt1 = t - node[n1].t;
@@ -181,8 +205,12 @@ function insRibbonSmoke(
 }
 
 function insTrailSmoke(
-  att: SmokeAttr, node: SmokeNode[], n0: number, n1: number, t: number,
-  lineVerts: number[],
+  att: SmokeAttr,
+  node: SmokeNode[],
+  n0: number,
+  n1: number,
+  t: number,
+  lineVerts: number[]
 ): void {
   const rt0 = t - node[n0].t;
   const rt1 = t - node[n1].t;
@@ -205,8 +233,12 @@ function insTrailSmoke(
 }
 
 function insWireSmoke(
-  att: SmokeAttr, node: SmokeNode[], n0: number, n1: number, t: number,
-  lineVerts: number[],
+  att: SmokeAttr,
+  node: SmokeNode[],
+  n0: number,
+  n1: number,
+  t: number,
+  lineVerts: number[]
 ): void {
   const rt0 = t - node[n0].t;
   const rt1 = t - node[n1].t;
@@ -219,8 +251,12 @@ function insWireSmoke(
 }
 
 function insSolidSmoke(
-  att: SmokeAttr, node: SmokeNode[], n0: number, n1: number, t: number,
-  verts: number[],
+  att: SmokeAttr,
+  node: SmokeNode[],
+  n0: number,
+  n1: number,
+  t: number,
+  verts: number[]
 ): void {
   const rt0 = t - node[n0].t;
   const rt1 = t - node[n1].t;
@@ -298,15 +334,19 @@ function insSolidSmoke(
   pushLitVert(verts, vtx[0], nom[0], c, alpha);
 }
 
-function pushLitVert(
-  verts: number[], p: Vec3, n: Vec3, c: Color, alpha: number,
-): void {
+function pushLitVert(verts: number[], p: Vec3, n: Vec3, c: Color, alpha: number): void {
   verts.push(p.x, p.y, p.z, n.x, n.y, n.z, n.x, n.y, n.z, c.r, c.g, c.b, alpha);
 }
 
 function insSmokeTips(
-  cla: SmokeClass, inst: SmokeInst, nEnd: number, nSta: number,
-  ctim: number, eyePos: Vec3, litVerts: number[], lineVerts: number[],
+  cla: SmokeClass,
+  inst: SmokeInst,
+  nEnd: number,
+  nSta: number,
+  ctim: number,
+  eyePos: Vec3,
+  litVerts: number[],
+  lineVerts: number[]
 ): void {
   if (cla.sw & ARS_SOLIDSMOKE) {
     let n = nSta;
@@ -354,7 +394,10 @@ function insSmokeTips(
 }
 
 export function drawSmoke(
-  cla: SmokeClass, inst: SmokeInst, ctim: number, eye: PosAtt,
+  cla: SmokeClass,
+  inst: SmokeInst,
+  ctim: number,
+  eye: PosAtt
 ): { lit: Float32Array; lines: Float32Array } {
   const litVerts: number[] = [];
   const lineVerts: number[] = [];

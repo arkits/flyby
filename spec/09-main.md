@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   await renderer.init(canvas);
 
   // 3. Load configuration
-  const config = await loadConfig('/data/flyby.inf');
+  const config = await loadConfig("/data/flyby.inf");
 
   // 4. Load all aircraft models
   const aircraft: SrfModel[] = [];
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     aircraft.push(await loadSrf(`/data/${fn}`));
   }
   // Pre-build GPU buffers for all models
-  const gpuModels = aircraft.map(a => renderer.buildSrfGpuBuffer(a));
+  const gpuModels = aircraft.map((a) => renderer.buildSrfGpuBuffer(a));
 
   // 5. Load field/scene
   const field = await loadField(`/data/${config.fieldFile}`);
@@ -96,10 +96,10 @@ interface Config {
   fieldFile: string;
   aircraft: string[];
   altitude: number;
-  smokeType: number;  // ARS_RIBBONSMOKE, etc.
+  smokeType: number; // ARS_RIBBONSMOKE, etc.
 }
 
-async function loadConfig(url: string): Promise<Config>
+async function loadConfig(url: string): Promise<Config>;
 ```
 
 ## Main Loop
@@ -134,11 +134,14 @@ Ported from `DrawScreen` (FLYBY.C:452-553):
 
 ```typescript
 function drawScreen(
-  show: ShowObj, obj: PosAtt, eye: PosAtt,
-  state: AppState, renderer: Renderer
+  show: ShowObj,
+  obj: PosAtt,
+  eye: PosAtt,
+  state: AppState,
+  renderer: Renderer
 ): void {
   const prj = getStdProjection(window.innerWidth, window.innerHeight);
-  prj.magx *= 2.0;  // Match original 2x magnification
+  prj.magx *= 2.0; // Match original 2x magnification
   prj.magy *= 2.0;
 
   // Camera looks at aircraft
@@ -164,12 +167,8 @@ function drawScreen(
   renderer.drawSrfModel(state.gpuModels[show.aircraft], obj);
 
   // Smoke trails
-  const smokeVerts = drawSmoke(
-    state.smokeClass, state.smokeInst, state.currentTime, eye
-  );
-  const vaporVerts = drawSmoke(
-    state.vaporClass, state.vaporInst, state.currentTime, eye
-  );
+  const smokeVerts = drawSmoke(state.smokeClass, state.smokeInst, state.currentTime, eye);
+  const vaporVerts = drawSmoke(state.vaporClass, state.vaporInst, state.currentTime, eye);
   renderer.drawSmokeGeometry(smokeVerts);
   renderer.drawSmokeGeometry(vaporVerts);
 
@@ -187,8 +186,8 @@ function drawScreen(
 
 ```typescript
 function registerInputHandler(state: AppState): void {
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'x' || e.key === 'X') {
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "x" || e.key === "X") {
       state.quitFlag = true;
     } else {
       state.helpCount = 30;
@@ -218,16 +217,16 @@ canvas {
 ```html
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FLYBY2 - Military Aircraft Flyby</title>
-  <link rel="stylesheet" href="/src/style.css" />
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLYBY2 - Military Aircraft Flyby</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
 ```
 
@@ -252,14 +251,14 @@ canvas {
 ```typescript
 // Parallel fetch all assets
 const responses = await Promise.all([
-  fetch('/data/flyby.inf'),
-  fetch('/data/airport.fld'),
-  fetch('/data/runway.pc2'),
-  fetch('/data/signal.pc2'),
-  fetch('/data/sample.ter'),
-  fetch('/data/hanger.srf'),
-  fetch('/data/tower.srf'),
-  ...aircraftFilenames.map(fn => fetch(`/data/${fn}`)),
+  fetch("/data/flyby.inf"),
+  fetch("/data/airport.fld"),
+  fetch("/data/runway.pc2"),
+  fetch("/data/signal.pc2"),
+  fetch("/data/sample.ter"),
+  fetch("/data/hanger.srf"),
+  fetch("/data/tower.srf"),
+  ...aircraftFilenames.map((fn) => fetch(`/data/${fn}`)),
 ]);
 ```
 

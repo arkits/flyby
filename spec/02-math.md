@@ -20,15 +20,15 @@ The original uses 16-bit integer angles where `0x10000` (65536) = 360°.
 const YSPI = 3.14159265;
 
 function sin16(a: number): number {
-  return Math.sin(a * YSPI / 32768.0);
+  return Math.sin((a * YSPI) / 32768.0);
 }
 
 function cos16(a: number): number {
-  return Math.cos(a * YSPI / 32768.0);
+  return Math.cos((a * YSPI) / 32768.0);
 }
 
 function tan16(a: number): number {
-  return Math.tan(a * YSPI / 32768.0);
+  return Math.tan((a * YSPI) / 32768.0);
 }
 ```
 
@@ -37,15 +37,15 @@ function tan16(a: number): number {
 ```typescript
 // Returns angle in 0x10000 units
 function asin16(s: number): number {
-  return Math.asin(s) * 32768.0 / YSPI;
+  return (Math.asin(s) * 32768.0) / YSPI;
 }
 
 function acos16(s: number): number {
-  return Math.acos(s) * 32768.0 / YSPI;
+  return (Math.acos(s) * 32768.0) / YSPI;
 }
 
 function atan16(s: number): number {
-  return Math.atan(s) * 32768.0 / YSPI;
+  return (Math.atan(s) * 32768.0) / YSPI;
 }
 ```
 
@@ -56,36 +56,36 @@ function atan16(s: number): number {
 All operate on `Vec3` in-place. `dst` can alias `src`.
 
 ```typescript
-function setPoint(dst: Vec3, x: number, y: number, z: number): void
-function addPoint(dst: Vec3, a: Vec3, b: Vec3): void  // dst = a + b
-function subPoint(dst: Vec3, a: Vec3, b: Vec3): void  // dst = a - b
-function mulPoint(dst: Vec3, src: Vec3, m: number): void  // dst = src * m
-function divPoint(dst: Vec3, src: Vec3, d: number): void  // dst = src / d
+function setPoint(dst: Vec3, x: number, y: number, z: number): void;
+function addPoint(dst: Vec3, a: Vec3, b: Vec3): void; // dst = a + b
+function subPoint(dst: Vec3, a: Vec3, b: Vec3): void; // dst = a - b
+function mulPoint(dst: Vec3, src: Vec3, m: number): void; // dst = src * m
+function divPoint(dst: Vec3, src: Vec3, d: number): void; // dst = src / d
 ```
 
 ### Dot/Cross/Length/Normalize (icalc.c:275-345)
 
 ```typescript
-function innerPoint(a: Vec3, b: Vec3): number
-  // a.x*b.x + a.y*b.y + a.z*b.z
+function innerPoint(a: Vec3, b: Vec3): number;
+// a.x*b.x + a.y*b.y + a.z*b.z
 
-function outerProduct(ou: Vec3, v1: Vec3, v2: Vec3): void
-  // Cross product: ou = v1 × v2
-  // ou.x = v1.y*v2.z - v1.z*v2.y
-  // ou.y = v1.z*v2.x - v1.x*v2.z
-  // ou.z = v1.x*v2.y - v1.y*v2.x
+function outerProduct(ou: Vec3, v1: Vec3, v2: Vec3): void;
+// Cross product: ou = v1 × v2
+// ou.x = v1.y*v2.z - v1.z*v2.y
+// ou.y = v1.z*v2.x - v1.x*v2.z
+// ou.z = v1.x*v2.y - v1.y*v2.x
 
-function length2(x: number, y: number): number
-  // sqrt(x*x + y*y)
+function length2(x: number, y: number): number;
+// sqrt(x*x + y*y)
 
-function length3(x: number, y: number, z: number): number
-  // length2(x, length2(y, z))
+function length3(x: number, y: number, z: number): number;
+// length2(x, length2(y, z))
 
-function lengthPoint3(p: Vec3): number
-  // length3(p.x, p.y, p.z)
+function lengthPoint3(p: Vec3): number;
+// length3(p.x, p.y, p.z)
 
-function normalize(dst: Vec3, src: Vec3): void
-  // dst = src / |src|  (if |src| >= YSEPS=0.0001)
+function normalize(dst: Vec3, src: Vec3): void;
+// dst = src / |src|  (if |src| >= YSEPS=0.0001)
 ```
 
 ### Average Normal Vector (icalc.c:285-336)
@@ -93,10 +93,10 @@ function normalize(dst: Vec3, src: Vec3): void
 Computes polygon normal from vertices by finding the sharpest edge pair.
 
 ```typescript
-function averageNormalVector(nom: Vec3, np: number, p: Vec3[]): boolean
-  // Find 3 consecutive vertices forming sharpest angle
-  // Return cross product of their edge vectors, normalized
-  // Returns false if polygon is degenerate
+function averageNormalVector(nom: Vec3, np: number, p: Vec3[]): boolean;
+// Find 3 consecutive vertices forming sharpest angle
+// Return cross product of their edge vectors, normalized
+// Returns false if polygon is degenerate
 ```
 
 ## Rotation
@@ -106,9 +106,12 @@ function averageNormalVector(nom: Vec3, np: number, p: Vec3[]): boolean
 ```typescript
 function makeTrigonomy(att: Attitude): TrigCache {
   return {
-    sinh: sin16(att.h), cosh: cos16(att.h),
-    sinp: sin16(att.p), cosp: cos16(att.p),
-    sinb: sin16(att.b), cosb: cos16(att.b),
+    sinh: sin16(att.h),
+    cosh: cos16(att.h),
+    sinp: sin16(att.p),
+    cosp: cos16(att.p),
+    sinb: sin16(att.b),
+    cosb: cos16(att.b),
   };
 }
 ```
@@ -150,10 +153,10 @@ dst.y    = -sinb * temp.x + cosb * temp.y
 Same as above but takes pre-computed `TrigCache` instead of `Attitude`.
 
 ```typescript
-function rotLtoG(dst: Vec3, src: Vec3, t: TrigCache): void
-function rotGtoL(dst: Vec3, src: Vec3, t: TrigCache): void
-function rotFastLtoG(dst: Vec3, src: Vec3, t: TrigCache): void  // same as rotLtoG with pre-computed trig
-function rotFastGtoL(dst: Vec3, src: Vec3, t: TrigCache): void
+function rotLtoG(dst: Vec3, src: Vec3, t: TrigCache): void;
+function rotGtoL(dst: Vec3, src: Vec3, t: TrigCache): void;
+function rotFastLtoG(dst: Vec3, src: Vec3, t: TrigCache): void; // same as rotLtoG with pre-computed trig
+function rotFastGtoL(dst: Vec3, src: Vec3, t: TrigCache): void;
 ```
 
 ## Coordinate Conversion
@@ -161,14 +164,14 @@ function rotFastGtoL(dst: Vec3, src: Vec3, t: TrigCache): void
 ### BiConvLtoG / BiConvGtoL (impulse.h:1167-1177)
 
 ```typescript
-function convLtoG(dst: Vec3, src: Vec3, axs: Axis): void
-  // dst = rotate(src by axs.t) + axs.p
+function convLtoG(dst: Vec3, src: Vec3, axs: Axis): void;
+// dst = rotate(src by axs.t) + axs.p
 
-function convGtoL(dst: Vec3, src: Vec3, axs: Axis): void
-  // dst = rotate(src - axs.p by inverse axs.t)
+function convGtoL(dst: Vec3, src: Vec3, axs: Axis): void;
+// dst = rotate(src - axs.p by inverse axs.t)
 
-function pntAngToAxis(dst: Axis, src: PosAtt): void
-  // dst.p = src.p, dst.a = src.a, dst.t = makeTrigonomy(src.a)
+function pntAngToAxis(dst: Axis, src: PosAtt): void;
+// dst.p = src.p, dst.a = src.a, dst.t = makeTrigonomy(src.a)
 ```
 
 ## Projection
@@ -177,8 +180,8 @@ function pntAngToAxis(dst: Axis, src: PosAtt): void
 
 ```typescript
 function project(dst: ScreenPoint, src: Vec3, prj: Projection): void {
-  dst.x = prj.cx + (src.x * prj.magx / src.z);
-  dst.y = prj.cy - (src.y * prj.magy / src.z);
+  dst.x = prj.cx + (src.x * prj.magx) / src.z;
+  dst.y = prj.cy - (src.y * prj.magy) / src.z;
 }
 ```
 
@@ -193,8 +196,8 @@ function getStdProjection(width: number, height: number): Projection {
     ly: height,
     cx: width / 2,
     cy: height / 2,
-    magx: width / 2,   // original: 640/2 = 320
-    magy: height / 2,  // original: 480/2 = 240
+    magx: width / 2, // original: 640/2 = 320
+    magy: height / 2, // original: 480/2 = 240
     nearz: 0.5,
     farz: 16000.0,
   };
@@ -202,9 +205,10 @@ function getStdProjection(width: number, height: number): Projection {
 ```
 
 **FlyBy applies 2x magnification** (FLYBY.C:479-481):
+
 ```typescript
-prj.magx *= 2.0;  // So effective magx = width (640 for original)
-prj.magy *= 2.0;  // So effective magy = height (480 for original)
+prj.magx *= 2.0; // So effective magx = width (640 for original)
+prj.magy *= 2.0; // So effective magy = height (480 for original)
 ```
 
 ## Vector to Angle
@@ -249,11 +253,11 @@ function biAngle2(x: number, y: number): number {
   if (ax >= ay) {
     const a = atan16(y / ax);
     if (x > 0) return a;
-    return (y > 0) ? (0x8000 - a) : (-0x8000 - a);
+    return y > 0 ? 0x8000 - a : -0x8000 - a;
   } else {
     const a = atan16(x / ay);
-    if (y > 0) return (0x4000 - a);
-    return (-0x4000 + a);
+    if (y > 0) return 0x4000 - a;
+    return -0x4000 + a;
   }
 }
 ```
@@ -308,40 +312,40 @@ function nearClipPolyg(p: Vec3[], nearz: number): Vec3[] {
   for (let i = 0; i < np - 1; i++) {
     if (p[i].z > nearz) {
       out.push(p[i]);
-      if (p[i+1].z <= nearz) {
+      if (p[i + 1].z <= nearz) {
         // Edge crosses near plane: interpolate
-        const t = (nearz - p[i].z) / (p[i+1].z - p[i].z);
+        const t = (nearz - p[i].z) / (p[i + 1].z - p[i].z);
         out.push({
-          x: p[i].x + (p[i+1].x - p[i].x) * t,
-          y: p[i].y + (p[i+1].y - p[i].y) * t,
+          x: p[i].x + (p[i + 1].x - p[i].x) * t,
+          y: p[i].y + (p[i + 1].y - p[i].y) * t,
           z: nearz,
         });
       }
-    } else if (p[i+1].z > nearz) {
-      const t = (nearz - p[i].z) / (p[i+1].z - p[i].z);
+    } else if (p[i + 1].z > nearz) {
+      const t = (nearz - p[i].z) / (p[i + 1].z - p[i].z);
       out.push({
-        x: p[i].x + (p[i+1].x - p[i].x) * t,
-        y: p[i].y + (p[i+1].y - p[i].y) * t,
+        x: p[i].x + (p[i + 1].x - p[i].x) * t,
+        y: p[i].y + (p[i + 1].y - p[i].y) * t,
         z: nearz,
       });
     }
   }
   // Close polygon (last-to-first edge)
-  if (p[np-1].z > nearz) {
-    out.push(p[np-1]);
+  if (p[np - 1].z > nearz) {
+    out.push(p[np - 1]);
     if (p[0].z <= nearz) {
-      const t = (nearz - p[np-1].z) / (p[0].z - p[np-1].z);
+      const t = (nearz - p[np - 1].z) / (p[0].z - p[np - 1].z);
       out.push({
-        x: p[np-1].x + (p[0].x - p[np-1].x) * t,
-        y: p[np-1].y + (p[0].y - p[np-1].y) * t,
+        x: p[np - 1].x + (p[0].x - p[np - 1].x) * t,
+        y: p[np - 1].y + (p[0].y - p[np - 1].y) * t,
         z: nearz,
       });
     }
   } else if (p[0].z > nearz) {
-    const t = (nearz - p[np-1].z) / (p[0].z - p[np-1].z);
+    const t = (nearz - p[np - 1].z) / (p[0].z - p[np - 1].z);
     out.push({
-      x: p[np-1].x + (p[0].x - p[np-1].x) * t,
-      y: p[np-1].y + (p[0].y - p[np-1].y) * t,
+      x: p[np - 1].x + (p[0].x - p[np - 1].x) * t,
+      y: p[np - 1].y + (p[0].y - p[np - 1].y) * t,
       z: nearz,
     });
   }
@@ -354,7 +358,13 @@ function nearClipPolyg(p: Vec3[], nearz: number): Vec3[] {
 ```typescript
 const YSEPS = 0.0001;
 
-function biAbs(a: number): number { return Math.abs(a); }
-function biLarger(a: number, b: number): number { return a > b ? a : b; }
-function biSmaller(a: number, b: number): number { return a < b ? a : b; }
+function biAbs(a: number): number {
+  return Math.abs(a);
+}
+function biLarger(a: number, b: number): number {
+  return a > b ? a : b;
+}
+function biSmaller(a: number, b: number): number {
+  return a < b ? a : b;
+}
 ```

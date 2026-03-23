@@ -110,27 +110,27 @@ roads rather than runway-crossing city blocks.
 
 ## Parity Matrix
 
-| Area | Original | Current Port | Status |
-|------|----------|--------------|--------|
-| `flyby.inf` loading | field, smoke mode, altitude, aircraft list | Ported | Good |
-| Maneuver scripts | straight, roll, loop, climb, eight, 360 | Ported structurally | Good |
-| Motion constants | `100 units/sec`, original pitch/bank/turn rates | Ported | Needs runtime validation |
-| Camera look-at | `BiVectorToHeadPitch` every frame | Ported; debug HUD also exposes non-parity `Third Person`, `Top Down Follow`, and `Top Down Static` views | Needs visual validation |
-| Fixed-step pacing | `PassedTime()` waits for at least `0.02s` and each accepted step is drawn | Browser fixed-step accumulator exists, but batched stepping still coalesces draws | Partial parity |
-| SRF parser | vertices, faces, normals, twist, bbox | Ported | Good |
-| FLD parser | `SRF`, `TER`, `PC2`, `PLT`, `RGN`, `FLD`, `LOD` | Ported | Good |
-| PC2 parser | `PST`, `PLL`, `LSQ`, `PLG`, `DST` | Ported | Good |
-| Terrain parser | block mesh + side walls | Ported | Good |
-| Recursive field traversal | nested `FLD` composition | Ported | Good |
-| `PC2` vs `PLT` draw path | overlay vs inserted scene object, with painter-ordered PC2 map drawing | Ported | Good |
-| Field runtime helpers | region, elevation, SRF collision | Implemented | Partial parity |
-| Smoke class / instance model | Aurora-style data layout | Ported | Good |
-| Smoke traversal order | backward stepping over tips in `ASMOKE.C` | Matches local source | Good |
-| Smoke color transition edge path | literal `ASMOKE.C` branch semantics | Current code uses a safer browser interpretation | Unvalidated edge case |
-| Raw default airport | original `AIRPORT.FLD` layout and colors | Default browser airport now uses raw asset counts | Partial parity |
-| Default lighting / ground-sky | field colors + split horizon + eye-relative light | Environment descriptor, procedural sky, fog, and directional light | Browser adaptation |
-| `flyby2_s` aircraft inventory | `FLYBY2_S.INF` list | Source list now matches original 22-aircraft bundle | Good |
-| Browser build | should compile cleanly | Verified with `bun run build` | Good |
+| Area                             | Original                                                                  | Current Port                                                                                             | Status                   |
+| -------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `flyby.inf` loading              | field, smoke mode, altitude, aircraft list                                | Ported                                                                                                   | Good                     |
+| Maneuver scripts                 | straight, roll, loop, climb, eight, 360                                   | Ported structurally                                                                                      | Good                     |
+| Motion constants                 | `100 units/sec`, original pitch/bank/turn rates                           | Ported                                                                                                   | Needs runtime validation |
+| Camera look-at                   | `BiVectorToHeadPitch` every frame                                         | Ported; debug HUD also exposes non-parity `Third Person`, `Top Down Follow`, and `Top Down Static` views | Needs visual validation  |
+| Fixed-step pacing                | `PassedTime()` waits for at least `0.02s` and each accepted step is drawn | Browser fixed-step accumulator exists, but batched stepping still coalesces draws                        | Partial parity           |
+| SRF parser                       | vertices, faces, normals, twist, bbox                                     | Ported                                                                                                   | Good                     |
+| FLD parser                       | `SRF`, `TER`, `PC2`, `PLT`, `RGN`, `FLD`, `LOD`                           | Ported                                                                                                   | Good                     |
+| PC2 parser                       | `PST`, `PLL`, `LSQ`, `PLG`, `DST`                                         | Ported                                                                                                   | Good                     |
+| Terrain parser                   | block mesh + side walls                                                   | Ported                                                                                                   | Good                     |
+| Recursive field traversal        | nested `FLD` composition                                                  | Ported                                                                                                   | Good                     |
+| `PC2` vs `PLT` draw path         | overlay vs inserted scene object, with painter-ordered PC2 map drawing    | Ported                                                                                                   | Good                     |
+| Field runtime helpers            | region, elevation, SRF collision                                          | Implemented                                                                                              | Partial parity           |
+| Smoke class / instance model     | Aurora-style data layout                                                  | Ported                                                                                                   | Good                     |
+| Smoke traversal order            | backward stepping over tips in `ASMOKE.C`                                 | Matches local source                                                                                     | Good                     |
+| Smoke color transition edge path | literal `ASMOKE.C` branch semantics                                       | Current code uses a safer browser interpretation                                                         | Unvalidated edge case    |
+| Raw default airport              | original `AIRPORT.FLD` layout and colors                                  | Default browser airport now uses raw asset counts                                                        | Partial parity           |
+| Default lighting / ground-sky    | field colors + split horizon + eye-relative light                         | Environment descriptor, procedural sky, fog, and directional light                                       | Browser adaptation       |
+| `flyby2_s` aircraft inventory    | `FLYBY2_S.INF` list                                                       | Source list now matches original 22-aircraft bundle                                                      | Good                     |
+| Browser build                    | should compile cleanly                                                    | Verified with `bun run build`                                                                            | Good                     |
 
 ## Source-Audited Findings
 

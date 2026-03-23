@@ -1,14 +1,19 @@
 // FLYBY2 — Field Runtime Helpers
 // Ported from ifield.c / iterrain.c / imodel.c query helpers
 
-import type {
-  Attitude, Axis, Color, Field, PosAtt, Terrain, Vec2, Vec3,
-} from './types';
+import type { Attitude, Axis, Color, Field, PosAtt, Terrain, Vec2, Vec3 } from "./types";
 import {
-  convGtoL, convLtoG, cos16, makeTrigonomy, rotFastLtoG, sin16, vec3, vectorToAngle,
-} from './math';
+  convGtoL,
+  convLtoG,
+  cos16,
+  makeTrigonomy,
+  rotFastLtoG,
+  sin16,
+  vec3,
+  vectorToAngle,
+} from "./math";
 
-export type FieldObjectType = 'pc2' | 'srf' | 'plt' | 'ter' | 'rgn' | 'fld';
+export type FieldObjectType = "pc2" | "srf" | "plt" | "ter" | "rgn" | "fld";
 
 export interface FieldObjectIdentity {
   id: number;
@@ -62,12 +67,18 @@ function composePosAtt(local: PosAtt, parent: PosAtt): PosAtt {
 
 function getFieldObjectList(field: Field, type: FieldObjectType) {
   switch (type) {
-    case 'pc2': return field.pc2;
-    case 'srf': return field.srf;
-    case 'plt': return field.plt;
-    case 'ter': return field.ter;
-    case 'rgn': return field.rgn;
-    case 'fld': return field.fld;
+    case "pc2":
+      return field.pc2;
+    case "srf":
+      return field.srf;
+    case "plt":
+      return field.plt;
+    case "ter":
+      return field.ter;
+    case "rgn":
+      return field.rgn;
+    case "fld":
+      return field.fld;
   }
 }
 
@@ -79,7 +90,7 @@ export function getFieldObjPosition(
   field: Field,
   layout: PosAtt,
   type: FieldObjectType,
-  id: number,
+  id: number
 ): PosAtt | null {
   const list = getFieldObjectList(field, type);
   if (id < 0 || id >= list.length) return null;
@@ -89,12 +100,12 @@ export function getFieldObjPosition(
 export function getFieldObjId(
   field: Field,
   type: FieldObjectType,
-  id: number,
+  id: number
 ): FieldObjectIdentity | null {
   const list = getFieldObjectList(field, type);
   if (id < 0 || id >= list.length) return null;
   const obj = list[id];
-  if ('id' in obj && 'tag' in obj) {
+  if ("id" in obj && "tag" in obj) {
     return { id: obj.id, tag: obj.tag };
   }
   return null;
@@ -130,14 +141,10 @@ function getTerrainTriangle(ter: Terrain, locx: number, locz: number): [Vec3, Ve
   const ed3 = getTerrainPoint(ter, bx + 1, bz + 1);
 
   if (blk.lup === 1) {
-    return (ibz / ter.zWid > 1.0 - ibx / ter.xWid)
-      ? [ed1, ed3, ed2]
-      : [ed0, ed1, ed2];
+    return ibz / ter.zWid > 1.0 - ibx / ter.xWid ? [ed1, ed3, ed2] : [ed0, ed1, ed2];
   }
 
-  return (ibz / ter.zWid > ibx / ter.xWid)
-    ? [ed0, ed3, ed2]
-    : [ed0, ed1, ed3];
+  return ibz / ter.zWid > ibx / ter.xWid ? [ed0, ed3, ed2] : [ed0, ed1, ed3];
 }
 
 function triangleHeightOnXZ(tri: [Vec3, Vec3, Vec3], x: number, z: number): number {
@@ -154,7 +161,7 @@ function triangleHeightOnXZ(tri: [Vec3, Vec3, Vec3], x: number, z: number): numb
 function terrainHeightAtPoint(
   ter: Terrain,
   pos: PosAtt,
-  worldPoint: Vec3,
+  worldPoint: Vec3
 ): { inside: boolean; tri: [Vec3, Vec3, Vec3] | null; elevation: number } {
   const local = vec3(0, 0, 0);
   convGtoL(local, worldPoint, axisFromPosAtt(pos));
@@ -177,7 +184,7 @@ function terrainEyeUpVectors(
   ter: Terrain,
   pos: PosAtt,
   worldPoint: Vec3,
-  hdg: number,
+  hdg: number
 ): { inside: boolean; eyeVec: Vec3; upVec: Vec3; elevation: number } {
   const hit = terrainHeightAtPoint(ter, pos, worldPoint);
   if (!hit.inside || !hit.tri) {
@@ -198,8 +205,9 @@ function terrainEyeUpVectors(
 
   const eyeLocal = vec3(
     dir.x + (vz.x / (Math.abs(vz.z) > 1e-6 ? vz.z : 1)) * dir.y,
-    (vx.y / (Math.abs(vx.x) > 1e-6 ? vx.x : 1)) * dir.x + (vz.y / (Math.abs(vz.z) > 1e-6 ? vz.z : 1)) * dir.y,
-    (vx.z / (Math.abs(vx.x) > 1e-6 ? vx.x : 1)) * dir.x + dir.y,
+    (vx.y / (Math.abs(vx.x) > 1e-6 ? vx.x : 1)) * dir.x +
+      (vz.y / (Math.abs(vz.z) > 1e-6 ? vz.z : 1)) * dir.y,
+    (vx.z / (Math.abs(vx.x) > 1e-6 ? vx.x : 1)) * dir.x + dir.y
   );
   const eyeVec = vec3(0, 0, 0);
   rotFastLtoG(eyeVec, eyeLocal, makeTrigonomy(pos.a));
@@ -209,7 +217,7 @@ function terrainEyeUpVectors(
   const upLocal = vec3(
     e2.y * e1.z - e2.z * e1.y,
     e2.z * e1.x - e2.x * e1.z,
-    e2.x * e1.y - e2.y * e1.x,
+    e2.x * e1.y - e2.y * e1.x
   );
   const upVec = vec3(0, 0, 0);
   rotFastLtoG(upVec, upLocal, makeTrigonomy(pos.a));
@@ -222,18 +230,16 @@ function terrainEyeUpVectors(
   };
 }
 
-export function getFieldRegion(
-  field: Field,
-  pos: PosAtt,
-  point: Vec3,
-): FieldRegionResult {
+export function getFieldRegion(field: Field, pos: PosAtt, point: Vec3): FieldRegionResult {
   for (const region of field.rgn) {
     const regionPos = composePosAtt(region.pos, pos);
     const local = vec3(0, 0, 0);
     convGtoL(local, point, axisFromPosAtt(regionPos));
     if (
-      region.min.x <= local.x && local.x <= region.max.x
-      && region.min.y <= local.z && local.z <= region.max.y
+      region.min.x <= local.x &&
+      local.x <= region.max.x &&
+      region.min.y <= local.z &&
+      local.z <= region.max.y
     ) {
       return { inside: true, id: region.id, tag: region.tag };
     }
@@ -245,14 +251,14 @@ export function getFieldRegion(
     if (result.inside) return result;
   }
 
-  return { inside: false, id: 0, tag: '' };
+  return { inside: false, id: 0, tag: "" };
 }
 
 export function getFieldElevation(
   field: Field,
   pos: PosAtt,
   point: Vec3,
-  hdg: number,
+  hdg: number
 ): FieldElevationResult {
   for (const ter of field.ter) {
     const terPos = composePosAtt(ter.pos, pos);
@@ -278,7 +284,7 @@ export function getFieldElevation(
   return {
     inside: false,
     id: 0,
-    tag: '',
+    tag: "",
     elevation: 0,
     eyeVec: vec3(-sin16(hdg), 0, cos16(hdg)),
     upVec: vec3(0, 1, 0),
@@ -289,7 +295,7 @@ export function getFieldSrfCollision(
   field: Field,
   pos: PosAtt,
   point: Vec3,
-  bump: number,
+  bump: number
 ): FieldCollisionResult {
   for (const srf of field.srf) {
     const srfPos = composePosAtt(srf.pos, pos);
@@ -306,9 +312,12 @@ export function getFieldSrfCollision(
     max.z += bump;
 
     if (
-      min.x <= local.x && local.x <= max.x
-      && min.y <= local.y && local.y <= max.y
-      && min.z <= local.z && local.z <= max.z
+      min.x <= local.x &&
+      local.x <= max.x &&
+      min.y <= local.y &&
+      local.y <= max.y &&
+      min.z <= local.z &&
+      local.z <= max.z
     ) {
       return { inside: true, id: srf.id, tag: srf.tag };
     }
@@ -320,5 +329,5 @@ export function getFieldSrfCollision(
     if (result.inside) return result;
   }
 
-  return { inside: false, id: 0, tag: '' };
+  return { inside: false, id: 0, tag: "" };
 }

@@ -129,6 +129,18 @@ fn nightStar(dir: vec3f) -> f32 {
   return presence * (core + halo) * brightness;
 }
 
+fn nightMoon(dir: vec3f) -> vec3f {
+  let moonDir = normalize(vec3f(0.35, 0.48, -0.8));
+  let moonDot = max(dot(dir, moonDir), 0.0);
+  let discMask = smoothstep(0.042, 0.032, acos(clamp(moonDot, -1.0, 1.0)));
+  let edgeDark = 1.0 - discMask * 0.28;
+  let tex = noise2(dir.xz * 120.0 + vec2f(7.3, -3.1)) * 0.08;
+  let disc = discMask * edgeDark * (1.0 + tex);
+  let glow = smoothstep(0.22, 0.0, acos(clamp(moonDot, -1.0, 1.0))) * 0.055;
+  let warm = mix(vec3f(0.95, 0.94, 0.88), vec3f(1.0, 0.97, 0.9), tex * 6.0);
+  return warm * (disc + glow);
+}
+
 fn airportNightAurora(dir: vec3f, cloudBand: f32, mapId: f32) -> vec3f {
   let airportNightMask = step(1.5, mapId) * (1.0 - step(2.5, mapId));
   let altitudeMask = smoothstep(0.03, 0.16, dir.y) * (1.0 - smoothstep(0.42, 0.76, dir.y));
@@ -429,7 +441,21 @@ fn fsSky(input: SkyVertexOutput) -> @location(0) vec4f {
     color += airportNightAurora(dir, cloudBand, mapId);
     let star = nightStar(dir);
     let starVisibility = (1.0 - cloudBand * 0.7) * smoothstep(-0.04, 0.18, dir.y);
-    color += vec3f(star * starVisibility);
+    let starHue = mix(vec3f(1.0), vec3f(0.72, 0.84, 1.0), step(0.72, hash21(floor(angularSkyUv(dir, vec2f(420.0, 190.0))) + vec2f(53.0, 31.0))));
+    color += starHue * (star * starVisibility * 1.25);
+    let fineUv = angularSkyUv(dir, vec2f(680.0, 310.0));
+    let fineCell = floor(fineUv);
+    let fineCenter = vec2f(
+      0.22 + hash21(fineCell + vec2f(29.4, 11.7)) * 0.56,
+      0.22 + hash21(fineCell + vec2f(55.3, 19.8)) * 0.56,
+    );
+    let fineDelta = fract(fineUv) - fineCenter;
+    let finePresence = step(0.9996, hash21(fineCell + vec2f(37.0, 61.0)));
+    let fineGlow = smoothstep(0.05, 0.0, length(fineDelta)) * (0.28 + 0.35 * hash21(fineCell + vec2f(43.0, 7.0)));
+    color += vec3f(finePresence * fineGlow * starVisibility * 0.55);
+    if (mapId > 1.5 && mapId < 2.5) {
+      color += nightMoon(dir);
+    }
   }
 
   color = mix(color, u.skyHorizonColor.xyz, horizonBand * 0.14);

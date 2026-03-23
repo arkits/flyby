@@ -2,26 +2,54 @@
 // Ported from FLYBY.C
 
 import type {
-  PosAtt, AppState, ManeuverState, GpuSrf, GpuField, ManeuverKey, Vec3,
-  DebugPanelRefs, TelemetrySample, MapVariant, WorldSnapshot, FlybyCameraView, FlybyTopDownMode,
-} from './types';
+  PosAtt,
+  AppState,
+  ManeuverState,
+  GpuSrf,
+  GpuField,
+  ManeuverKey,
+  Vec3,
+  DebugPanelRefs,
+  TelemetrySample,
+  MapVariant,
+  WorldSnapshot,
+  FlybyCameraView,
+  FlybyTopDownMode,
+} from "./types";
 import {
-  vec3, subV3, rotLtoG, vectorToHeadPitch, pitchUp, sin16, cos16,
-  convGtoL, getStdProjection, project, makeTrigonomy,
-} from './math';
+  vec3,
+  subV3,
+  rotLtoG,
+  vectorToHeadPitch,
+  pitchUp,
+  sin16,
+  cos16,
+  convGtoL,
+  getStdProjection,
+  project,
+  makeTrigonomy,
+} from "./math";
+import { ARS_RIBBONSMOKE, ARS_SOLIDSMOKE, ARS_TRAILSMOKE, ARS_WIRESMOKE } from "./types";
+import { Renderer, debugViewTransform } from "./renderer";
+import { getFieldElevation, getFieldRegion, getFieldSrfCollision } from "./field-runtime";
 import {
-  ARS_RIBBONSMOKE, ARS_SOLIDSMOKE, ARS_TRAILSMOKE, ARS_WIRESMOKE,
-} from './types';
-import { Renderer, debugViewTransform } from './renderer';
-import { getFieldElevation, getFieldRegion, getFieldSrfCollision } from './field-runtime';
+  CAMERA_ZOOM_MAX,
+  CAMERA_ZOOM_MIN,
+  clampCameraPitch,
+  clampCameraZoom,
+  downloadFrame,
+  togglePause,
+  wrapAngle16,
+} from "./input";
 import {
-  CAMERA_ZOOM_MAX, CAMERA_ZOOM_MIN,
-  clampCameraPitch, clampCameraZoom, downloadFrame, togglePause, wrapAngle16,
-} from './input';
-import {
-  initSmokeClass, initSmokeInstance, clearSmokeInstance,
-  beginAppendSmokeNode, appendSmokeNode, endAppendSmokeNode, drawSmoke,
-} from './smoke';
+  initSmokeClass,
+  initSmokeInstance,
+  clearSmokeInstance,
+  beginAppendSmokeNode,
+  appendSmokeNode,
+  endAppendSmokeNode,
+  drawSmoke,
+} from "./smoke";
 
 let lastTime = 0;
 let timeScale = 1.0;
@@ -30,46 +58,46 @@ const SIMULATION_STEP = 0.02;
 const CAMERA_CONTROL_TILT_LIMIT_DEG = 80;
 const CAMERA_CONTROL_ZOOM_STEP = 0.1;
 const TELEMETRY_CHARTS = [
-  { key: 'altitude', label: 'Altitude', unit: 'm' },
-  { key: 'bank', label: 'Bank', unit: 'deg' },
-  { key: 'pitch', label: 'Pitch', unit: 'deg' },
-  { key: 'range', label: 'Camera Range', unit: 'm' },
+  { key: "altitude", label: "Altitude", unit: "m" },
+  { key: "bank", label: "Bank", unit: "deg" },
+  { key: "pitch", label: "Pitch", unit: "deg" },
+  { key: "range", label: "Camera Range", unit: "m" },
 ] as const;
 const MANEUVER_OPTIONS: Array<{ key: ManeuverKey; label: string }> = [
-  { key: 'straight', label: 'Straight Pass' },
-  { key: 'roll', label: 'Roll Program' },
-  { key: 'loop', label: 'Loop Program' },
-  { key: 'climb', label: 'Climb Program' },
-  { key: 'eight', label: 'Figure Eight' },
-  { key: 'turn360', label: '360 Turn' },
+  { key: "straight", label: "Straight Pass" },
+  { key: "roll", label: "Roll Program" },
+  { key: "loop", label: "Loop Program" },
+  { key: "climb", label: "Climb Program" },
+  { key: "eight", label: "Figure Eight" },
+  { key: "turn360", label: "360 Turn" },
 ];
 const CAMERA_VIEW_OPTIONS: Array<{ key: FlybyCameraView; label: string }> = [
-  { key: 'director', label: 'Director' },
-  { key: 'thirdPerson', label: 'Third Person' },
-  { key: 'topDown', label: 'Top Down' },
+  { key: "director", label: "Director" },
+  { key: "thirdPerson", label: "Third Person" },
+  { key: "topDown", label: "Top Down" },
 ];
 const TOP_DOWN_MODE_OPTIONS: Array<{ key: FlybyTopDownMode; label: string }> = [
-  { key: 'follow', label: 'Follow' },
-  { key: 'static', label: 'Static' },
+  { key: "follow", label: "Follow" },
+  { key: "static", label: "Static" },
 ];
 const THIRD_PERSON_DISTANCE = 38;
 const THIRD_PERSON_HEIGHT = 10;
 const TOP_DOWN_HEIGHT = 320;
 const CAPTURE_REFERENCE_POINTS: { label: string; point: Vec3 }[] = [
-  { label: 'rw1', point: vec3(92.86, 0, 19.84) },
-  { label: 'rw2', point: vec3(199.06, 0, -98.37) },
-  { label: 'sig1', point: vec3(148.56, 0, 1483.84) },
-  { label: 'sig2', point: vec3(43.85, 0, 1483.97) },
+  { label: "rw1", point: vec3(92.86, 0, 19.84) },
+  { label: "rw2", point: vec3(199.06, 0, -98.37) },
+  { label: "sig1", point: vec3(148.56, 0, 1483.84) },
+  { label: "sig2", point: vec3(43.85, 0, 1483.97) },
 ];
-const RANDOMIZED_AIRCRAFT_LABEL = 'Randomized pool';
-const RANDOMIZED_MANEUVER_LABEL = 'Randomized program';
+const RANDOMIZED_AIRCRAFT_LABEL = "Randomized pool";
+const RANDOMIZED_MANEUVER_LABEL = "Randomized program";
 
-function fmtVec(v: PosAtt['p']): string {
+function fmtVec(v: PosAtt["p"]): string {
   return `${v.x.toFixed(1)} ${v.y.toFixed(1)} ${v.z.toFixed(1)}`;
 }
 
 function fmtSigned(value: number, digits = 1): string {
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
 function angle16ToDegrees(angle: number): number {
@@ -116,7 +144,7 @@ function getAircraftLabel(state: AppState): string {
 }
 
 function getManeuverLabel(key: ManeuverKey | null): string {
-  return MANEUVER_OPTIONS.find((option) => option.key === key)?.label ?? 'Randomized Program';
+  return MANEUVER_OPTIONS.find((option) => option.key === key)?.label ?? "Randomized Program";
 }
 
 function updateRandomizedSelectionStatus(state: AppState, panel: DebugPanelRefs): void {
@@ -124,44 +152,46 @@ function updateRandomizedSelectionStatus(state: AppState, panel: DebugPanelRefs)
   panel.aircraftRandomStatus.hidden = !showAircraftStatus;
   panel.aircraftRandomStatus.textContent = showAircraftStatus
     ? `This scene: ${getAircraftLabel(state)}`
-    : '';
+    : "";
 
-  const showManeuverStatus = state.runtime.forcedManeuver === null && state.currentManeuverKey !== null;
+  const showManeuverStatus =
+    state.runtime.forcedManeuver === null && state.currentManeuverKey !== null;
   panel.maneuverRandomStatus.hidden = !showManeuverStatus;
   panel.maneuverRandomStatus.textContent = showManeuverStatus
     ? `This scene: ${getManeuverLabel(state.currentManeuverKey)}`
-    : '';
+    : "";
 }
 
 function getTopDownModeLabel(mode: FlybyTopDownMode): string {
-  return TOP_DOWN_MODE_OPTIONS.find((option) => option.key === mode)?.label ?? 'Follow';
+  return TOP_DOWN_MODE_OPTIONS.find((option) => option.key === mode)?.label ?? "Follow";
 }
 
 function getCameraViewLabel(state: AppState): string {
-  const base = CAMERA_VIEW_OPTIONS.find((option) => option.key === state.cameraView)?.label ?? 'Director';
-  return state.cameraView === 'topDown'
+  const base =
+    CAMERA_VIEW_OPTIONS.find((option) => option.key === state.cameraView)?.label ?? "Director";
+  return state.cameraView === "topDown"
     ? `${base} ${getTopDownModeLabel(state.topDownMode)}`
     : base;
 }
 
 function getManeuverMetric(maneuver: ManeuverState | null): string {
-  if (!maneuver) return 'standby';
-  return maneuver.type === 'AHEAD'
+  if (!maneuver) return "standby";
+  return maneuver.type === "AHEAD"
     ? `${(maneuver.dist ?? 0).toFixed(1)} m remaining`
     : `${Math.round(maneuver.ctr ?? 0)} ctr remaining`;
 }
 
 function getManeuverProgress(maneuver: ManeuverState | null): number {
   if (!maneuver) return 0;
-  if (maneuver.type === 'AHEAD') {
+  if (maneuver.type === "AHEAD") {
     const total = maneuver.initialDist ?? 0;
     if (total <= 0) return 1;
-    return Math.max(0, Math.min(1, 1 - ((maneuver.dist ?? 0) / total)));
+    return Math.max(0, Math.min(1, 1 - (maneuver.dist ?? 0) / total));
   }
 
   const total = maneuver.initialCtr ?? 0;
   if (total <= 0) return 1;
-  return Math.max(0, Math.min(1, 1 - ((maneuver.ctr ?? 0) / total)));
+  return Math.max(0, Math.min(1, 1 - (maneuver.ctr ?? 0) / total));
 }
 
 function buildPitchLadder(): string {
@@ -176,7 +206,7 @@ function buildPitchLadder(): string {
       </div>
     `);
   }
-  return marks.join('');
+  return marks.join("");
 }
 
 function buildHeadingScale(headingDeg: number): string {
@@ -185,16 +215,17 @@ function buildHeadingScale(headingDeg: number): string {
     const value = wrapCompassDegrees(headingDeg + offset);
     const major = offset % 30 === 0;
     const label = major
-      ? ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[Math.round(value)] ?? Math.round(value).toString().padStart(3, '0')
-      : '·';
+      ? (({ 0: "N", 90: "E", 180: "S", 270: "W" } as Record<number, string>)[Math.round(value)] ??
+        Math.round(value).toString().padStart(3, "0"))
+      : "·";
     const left = ((offset + 90) / 180) * 100;
     marks.push(`
-      <span class="debug-console__heading-mark${offset === 0 ? ' is-center' : ''}${major ? ' is-major' : ''}" style="left:${left}%">
+      <span class="debug-console__heading-mark${offset === 0 ? " is-center" : ""}${major ? " is-major" : ""}" style="left:${left}%">
         ${label}
       </span>
     `);
   }
-  return marks.join('');
+  return marks.join("");
 }
 
 function queryElement<T extends Element>(root: ParentNode, selector: string): T {
@@ -211,13 +242,13 @@ function requestShowRestart(state: AppState): void {
 
 function updateMapVariant(mapVariant: MapVariant): void {
   const params = new URLSearchParams(window.location.search);
-  if (mapVariant === 'airport-improved') {
-    params.delete('map');
+  if (mapVariant === "airport-improved") {
+    params.delete("map");
   } else {
-    params.set('map', mapVariant);
+    params.set("map", mapVariant);
   }
   const query = params.toString();
-  window.location.search = query.length > 0 ? `?${query}` : '';
+  window.location.search = query.length > 0 ? `?${query}` : "";
 }
 
 function clonePosAtt(posAtt: PosAtt): PosAtt {
@@ -239,11 +270,11 @@ function addOffsetFromAttitude(origin: PosAtt, offset: Vec3): Vec3 {
 
 function resolveDirectorCamera(state: AppState): PosAtt {
   const renderEye = clonePosAtt(state.eye);
-  if (state.currentManeuver?.type === 'AHEAD') {
+  if (state.currentManeuver?.type === "AHEAD") {
     const maxAheadVerticalOffset = 28;
     renderEye.p.y = Math.max(
       state.obj.p.y - maxAheadVerticalOffset,
-      Math.min(state.obj.p.y + maxAheadVerticalOffset, renderEye.p.y),
+      Math.min(state.obj.p.y + maxAheadVerticalOffset, renderEye.p.y)
     );
   }
 
@@ -256,10 +287,7 @@ function resolveDirectorCamera(state: AppState): PosAtt {
 
 function resolveThirdPersonCamera(state: AppState): PosAtt {
   const renderEye: PosAtt = {
-    p: addOffsetFromAttitude(
-      state.obj,
-      vec3(0, THIRD_PERSON_HEIGHT, -THIRD_PERSON_DISTANCE),
-    ),
+    p: addOffsetFromAttitude(state.obj, vec3(0, THIRD_PERSON_HEIGHT, -THIRD_PERSON_DISTANCE)),
     a: {
       h: wrapAngle16(state.obj.a.h + state.cameraPan.heading),
       p: state.obj.a.p + state.cameraPan.pitch,
@@ -278,7 +306,7 @@ function currentFollowTopDownPosition(state: AppState): Vec3 {
 }
 
 function resolveTopDownCamera(state: AppState): PosAtt {
-  const anchor = state.topDownMode === 'static' ? state.topDownAnchor : null;
+  const anchor = state.topDownMode === "static" ? state.topDownAnchor : null;
   const renderEye: PosAtt = {
     p: anchor ?? currentFollowTopDownPosition(state),
     a: { h: 0, p: 0, b: 0 },
@@ -293,11 +321,11 @@ function latchTopDownAnchor(state: AppState): void {
 
 function resolveRenderCamera(state: AppState): PosAtt {
   switch (state.cameraView) {
-    case 'thirdPerson':
+    case "thirdPerson":
       return resolveThirdPersonCamera(state);
-    case 'topDown':
+    case "topDown":
       return resolveTopDownCamera(state);
-    case 'director':
+    case "director":
     default:
       return resolveDirectorCamera(state);
   }
@@ -312,13 +340,13 @@ function maneuverDurationSeconds(maneuver: ManeuverState | null): number {
 
   const nextDuration = maneuverDurationSeconds(maneuver.nextManeuvers[0] ?? null);
   switch (maneuver.type) {
-    case 'AHEAD':
-      return ((maneuver.initialDist ?? maneuver.dist ?? 0) / 100.0) + nextDuration;
-    case 'PITCH':
-    case 'TURN':
-      return ((maneuver.initialCtr ?? maneuver.ctr ?? 0) / 8192.0) + nextDuration;
-    case 'BANK':
-      return ((maneuver.initialCtr ?? maneuver.ctr ?? 0) / 32768.0) + nextDuration;
+    case "AHEAD":
+      return (maneuver.initialDist ?? maneuver.dist ?? 0) / 100.0 + nextDuration;
+    case "PITCH":
+    case "TURN":
+      return (maneuver.initialCtr ?? maneuver.ctr ?? 0) / 8192.0 + nextDuration;
+    case "BANK":
+      return (maneuver.initialCtr ?? maneuver.ctr ?? 0) / 32768.0 + nextDuration;
   }
 }
 
@@ -358,24 +386,25 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
 
   const aircraftOptions = state.aircraftLabels
     .map((label, index) => `<option value="${index}">${label}</option>`)
-    .join('');
-  const maneuverOptions = MANEUVER_OPTIONS
-    .map((option) => `<option value="${option.key}">${option.label}</option>`)
-    .join('');
-  const cameraViewOptions = CAMERA_VIEW_OPTIONS
-    .map((option) => `<option value="${option.key}">${option.label}</option>`)
-    .join('');
-  const topDownModeOptions = TOP_DOWN_MODE_OPTIONS
-    .map((option) => `<option value="${option.key}">${option.label}</option>`)
-    .join('');
+    .join("");
+  const maneuverOptions = MANEUVER_OPTIONS.map(
+    (option) => `<option value="${option.key}">${option.label}</option>`
+  ).join("");
+  const cameraViewOptions = CAMERA_VIEW_OPTIONS.map(
+    (option) => `<option value="${option.key}">${option.label}</option>`
+  ).join("");
+  const topDownModeOptions = TOP_DOWN_MODE_OPTIONS.map(
+    (option) => `<option value="${option.key}">${option.label}</option>`
+  ).join("");
   const mapOptions = `
     <option value="airport">Airport</option>
     <option value="airport-improved">Airport Improved</option>
     <option value="airport-night">Airport Night</option>
     <option value="downtown">Downtown</option>
+    <option value="san-francisco">San Francisco</option>
   `;
-  const chartCards = TELEMETRY_CHARTS
-    .map((chart) => `
+  const chartCards = TELEMETRY_CHARTS.map(
+    (chart) => `
       <div class="debug-console__chart-card">
         <div class="debug-console__chart-head">
           <span>${chart.label}</span>
@@ -388,8 +417,8 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
           <path class="debug-console__chart-trace" data-chart="${chart.key}" d="M 0 24 L 100 24"></path>
         </svg>
       </div>
-    `)
-    .join('');
+    `
+  ).join("");
 
   state.debugOverlay.innerHTML = `
     <div class="debug-console__header">
@@ -584,32 +613,98 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
 
   const panel: DebugPanelRefs = {
     mapSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="map"]'),
-    aircraftSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="aircraft"]'),
-    maneuverSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="maneuver"]'),
-    aircraftRandomStatus: queryElement<HTMLDivElement>(state.debugOverlay, '[data-value="aircraft-random-status"]'),
-    maneuverRandomStatus: queryElement<HTMLDivElement>(state.debugOverlay, '[data-value="maneuver-random-status"]'),
-    cameraViewSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="camera-view"]'),
-    topDownModeSelect: queryElement<HTMLSelectElement>(state.debugOverlay, '[data-control="top-down-mode"]'),
-    randomizeButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="randomize"]'),
-    previousManeuverButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="previous-maneuver"]'),
+    aircraftSelect: queryElement<HTMLSelectElement>(
+      state.debugOverlay,
+      '[data-control="aircraft"]'
+    ),
+    maneuverSelect: queryElement<HTMLSelectElement>(
+      state.debugOverlay,
+      '[data-control="maneuver"]'
+    ),
+    aircraftRandomStatus: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      '[data-value="aircraft-random-status"]'
+    ),
+    maneuverRandomStatus: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      '[data-value="maneuver-random-status"]'
+    ),
+    cameraViewSelect: queryElement<HTMLSelectElement>(
+      state.debugOverlay,
+      '[data-control="camera-view"]'
+    ),
+    topDownModeSelect: queryElement<HTMLSelectElement>(
+      state.debugOverlay,
+      '[data-control="top-down-mode"]'
+    ),
+    randomizeButton: queryElement<HTMLButtonElement>(
+      state.debugOverlay,
+      '[data-control="randomize"]'
+    ),
+    previousManeuverButton: queryElement<HTMLButtonElement>(
+      state.debugOverlay,
+      '[data-control="previous-maneuver"]'
+    ),
     pauseButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="pause"]'),
-    nextManeuverButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="next-maneuver"]'),
-    screenshotButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="screenshot"]'),
-    cameraPanRange: queryElement<HTMLInputElement>(state.debugOverlay, '[data-control="camera-pan"]'),
-    cameraTiltRange: queryElement<HTMLInputElement>(state.debugOverlay, '[data-control="camera-tilt"]'),
-    cameraZoomRange: queryElement<HTMLInputElement>(state.debugOverlay, '[data-control="camera-zoom"]'),
+    nextManeuverButton: queryElement<HTMLButtonElement>(
+      state.debugOverlay,
+      '[data-control="next-maneuver"]'
+    ),
+    screenshotButton: queryElement<HTMLButtonElement>(
+      state.debugOverlay,
+      '[data-control="screenshot"]'
+    ),
+    cameraPanRange: queryElement<HTMLInputElement>(
+      state.debugOverlay,
+      '[data-control="camera-pan"]'
+    ),
+    cameraTiltRange: queryElement<HTMLInputElement>(
+      state.debugOverlay,
+      '[data-control="camera-tilt"]'
+    ),
+    cameraZoomRange: queryElement<HTMLInputElement>(
+      state.debugOverlay,
+      '[data-control="camera-zoom"]'
+    ),
     cameraPanValue: queryElement<HTMLSpanElement>(state.debugOverlay, '[data-value="camera-pan"]'),
-    cameraTiltValue: queryElement<HTMLSpanElement>(state.debugOverlay, '[data-value="camera-tilt"]'),
-    cameraZoomValue: queryElement<HTMLSpanElement>(state.debugOverlay, '[data-value="camera-zoom"]'),
-    cameraResetButton: queryElement<HTMLButtonElement>(state.debugOverlay, '[data-control="camera-reset"]'),
+    cameraTiltValue: queryElement<HTMLSpanElement>(
+      state.debugOverlay,
+      '[data-value="camera-tilt"]'
+    ),
+    cameraZoomValue: queryElement<HTMLSpanElement>(
+      state.debugOverlay,
+      '[data-value="camera-zoom"]'
+    ),
+    cameraResetButton: queryElement<HTMLButtonElement>(
+      state.debugOverlay,
+      '[data-control="camera-reset"]'
+    ),
     progressTrack: queryElement<HTMLDivElement>(state.debugOverlay, '[data-control="progress"]'),
-    progressThumb: queryElement<HTMLDivElement>(state.debugOverlay, '.debug-console__progress-thumb'),
-    progressFill: queryElement<HTMLDivElement>(state.debugOverlay, '.debug-console__progress-fill'),
-    progressValue: queryElement<HTMLSpanElement>(state.debugOverlay, '[data-value="progress-value"]'),
-    progressLabel: queryElement<HTMLSpanElement>(state.debugOverlay, '[data-value="progress-label"]'),
-    attitudeHorizon: queryElement<HTMLDivElement>(state.debugOverlay, '.debug-console__attitude-horizon'),
-    attitudePitchScale: queryElement<HTMLDivElement>(state.debugOverlay, '.debug-console__attitude-pitch-scale'),
-    attitudeBankBug: queryElement<HTMLDivElement>(state.debugOverlay, '.debug-console__attitude-bank-bug'),
+    progressThumb: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      ".debug-console__progress-thumb"
+    ),
+    progressFill: queryElement<HTMLDivElement>(state.debugOverlay, ".debug-console__progress-fill"),
+    progressValue: queryElement<HTMLSpanElement>(
+      state.debugOverlay,
+      '[data-value="progress-value"]'
+    ),
+    progressLabel: queryElement<HTMLSpanElement>(
+      state.debugOverlay,
+      '[data-value="progress-label"]'
+    ),
+    attitudeHorizon: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      ".debug-console__attitude-horizon"
+    ),
+    attitudePitchScale: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      ".debug-console__attitude-pitch-scale"
+    ),
+    attitudeBankBug: queryElement<HTMLDivElement>(
+      state.debugOverlay,
+      ".debug-console__attitude-bank-bug"
+    ),
     headingScale: queryElement<HTMLDivElement>(state.debugOverlay, '[data-value="heading-scale"]'),
     values: {
       aircraft: queryElement(state.debugOverlay, '[data-value="aircraft"]'),
@@ -647,10 +742,16 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   };
 
   panel.mapSelect.value = state.runtime.mapVariant;
-  panel.aircraftSelect.value = state.runtime.forcedAircraftIndex === null
-    ? 'random'
-    : String(Math.max(0, Math.min(state.aircraftLabels.length - 1, Math.floor(state.runtime.forcedAircraftIndex))));
-  panel.maneuverSelect.value = state.runtime.forcedManeuver ?? 'random';
+  panel.aircraftSelect.value =
+    state.runtime.forcedAircraftIndex === null
+      ? "random"
+      : String(
+          Math.max(
+            0,
+            Math.min(state.aircraftLabels.length - 1, Math.floor(state.runtime.forcedAircraftIndex))
+          )
+        );
+  panel.maneuverSelect.value = state.runtime.forcedManeuver ?? "random";
   updateRandomizedSelectionStatus(state, panel);
   panel.cameraViewSelect.value = state.cameraView;
   panel.topDownModeSelect.value = state.topDownMode;
@@ -658,139 +759,151 @@ function initializeDebugOverlay(state: AppState): DebugPanelRefs {
   panel.cameraTiltRange.value = cameraTiltDegrees(state).toFixed(0);
   panel.cameraZoomRange.value = state.cameraPan.zoom.toFixed(2);
 
-  panel.mapSelect.addEventListener('change', () => {
+  panel.mapSelect.addEventListener("change", () => {
     updateMapVariant(panel.mapSelect.value as MapVariant);
   });
-  panel.aircraftSelect.addEventListener('change', () => {
-    state.runtime.forcedAircraftIndex = panel.aircraftSelect.value === 'random'
-      ? null
-      : Number(panel.aircraftSelect.value);
+  panel.aircraftSelect.addEventListener("change", () => {
+    state.runtime.forcedAircraftIndex =
+      panel.aircraftSelect.value === "random" ? null : Number(panel.aircraftSelect.value);
     requestShowRestart(state);
   });
-  panel.maneuverSelect.addEventListener('change', () => {
-    state.runtime.forcedManeuver = panel.maneuverSelect.value === 'random'
-      ? null
-      : panel.maneuverSelect.value as ManeuverKey;
+  panel.maneuverSelect.addEventListener("change", () => {
+    state.runtime.forcedManeuver =
+      panel.maneuverSelect.value === "random" ? null : (panel.maneuverSelect.value as ManeuverKey);
     requestShowRestart(state);
   });
-  panel.cameraViewSelect.addEventListener('change', () => {
+  panel.cameraViewSelect.addEventListener("change", () => {
     state.cameraView = panel.cameraViewSelect.value as FlybyCameraView;
-    if (state.cameraView === 'topDown' && state.topDownMode === 'static') {
+    if (state.cameraView === "topDown" && state.topDownMode === "static") {
       latchTopDownAnchor(state);
     }
   });
-  panel.topDownModeSelect.addEventListener('change', () => {
+  panel.topDownModeSelect.addEventListener("change", () => {
     state.topDownMode = panel.topDownModeSelect.value as FlybyTopDownMode;
-    if (state.topDownMode === 'static') {
+    if (state.topDownMode === "static") {
       latchTopDownAnchor(state);
     } else {
       state.topDownAnchor = null;
     }
   });
-  panel.randomizeButton.addEventListener('click', () => {
+  panel.randomizeButton.addEventListener("click", () => {
     state.runtime.forcedAircraftIndex = null;
     state.runtime.forcedManeuver = null;
-    panel.aircraftSelect.value = 'random';
-    panel.maneuverSelect.value = 'random';
+    panel.aircraftSelect.value = "random";
+    panel.maneuverSelect.value = "random";
     requestShowRestart(state);
   });
-  panel.pauseButton.addEventListener('click', () => {
+  panel.pauseButton.addEventListener("click", () => {
     togglePause(state);
   });
-  panel.previousManeuverButton.addEventListener('click', () => {
+  panel.previousManeuverButton.addEventListener("click", () => {
     cycleManeuverSelection(state, panel, -1);
   });
-  panel.nextManeuverButton.addEventListener('click', () => {
+  panel.nextManeuverButton.addEventListener("click", () => {
     cycleManeuverSelection(state, panel, 1);
   });
-  panel.screenshotButton.addEventListener('click', () => {
+  panel.screenshotButton.addEventListener("click", () => {
     downloadFrame(state.canvas);
   });
-  panel.cameraPanRange.addEventListener('input', () => {
+  panel.cameraPanRange.addEventListener("input", () => {
     setCameraPanDegrees(state, Number(panel.cameraPanRange.value));
   });
-  panel.cameraTiltRange.addEventListener('input', () => {
+  panel.cameraTiltRange.addEventListener("input", () => {
     const degrees = Math.max(
       -CAMERA_CONTROL_TILT_LIMIT_DEG,
-      Math.min(CAMERA_CONTROL_TILT_LIMIT_DEG, Number(panel.cameraTiltRange.value)),
+      Math.min(CAMERA_CONTROL_TILT_LIMIT_DEG, Number(panel.cameraTiltRange.value))
     );
     setCameraTiltDegrees(state, degrees);
   });
-  panel.cameraZoomRange.addEventListener('input', () => {
+  panel.cameraZoomRange.addEventListener("input", () => {
     state.cameraPan.zoom = clampCameraZoom(Number(panel.cameraZoomRange.value));
   });
-  panel.cameraResetButton.addEventListener('click', () => {
+  panel.cameraResetButton.addEventListener("click", () => {
     resetCameraControls(state);
   });
-  panel.progressTrack.addEventListener('pointerdown', (event) => {
+  panel.progressTrack.addEventListener("pointerdown", (event) => {
     const ratio = progressRatioFromPointer(panel, event.clientX);
     queueSeekToProgress(state, ratio);
     panel.progressTrack.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
-  panel.progressTrack.addEventListener('pointermove', (event) => {
+  panel.progressTrack.addEventListener("pointermove", (event) => {
     if (!panel.progressTrack.hasPointerCapture(event.pointerId)) return;
     queueSeekToProgress(state, progressRatioFromPointer(panel, event.clientX));
   });
-  panel.progressTrack.addEventListener('pointerup', (event) => {
+  panel.progressTrack.addEventListener("pointerup", (event) => {
     if (panel.progressTrack.hasPointerCapture(event.pointerId)) {
       panel.progressTrack.releasePointerCapture(event.pointerId);
     }
   });
-  panel.progressTrack.addEventListener('pointercancel', (event) => {
+  panel.progressTrack.addEventListener("pointercancel", (event) => {
     if (panel.progressTrack.hasPointerCapture(event.pointerId)) {
       panel.progressTrack.releasePointerCapture(event.pointerId);
     }
   });
-  panel.progressTrack.addEventListener('keydown', (event) => {
+  panel.progressTrack.addEventListener("keydown", (event) => {
     let delta = 0;
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') delta = -0.02;
-    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') delta = 0.02;
-    if (event.key === 'PageDown') delta = -0.1;
-    if (event.key === 'PageUp') delta = 0.1;
-    if (event.key === 'Home') {
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") delta = -0.02;
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") delta = 0.02;
+    if (event.key === "PageDown") delta = -0.1;
+    if (event.key === "PageUp") delta = 0.1;
+    if (event.key === "Home") {
       queueSeekToProgress(state, 0);
       event.preventDefault();
       return;
     }
-    if (event.key === 'End') {
+    if (event.key === "End") {
       queueSeekToProgress(state, 1);
       event.preventDefault();
       return;
     }
     if (delta !== 0) {
       const current = state.showSnapshot
-        ? clamp01(state.showSnapshot.totalDuration <= 0 ? 0 : state.currentTime / state.showSnapshot.totalDuration)
+        ? clamp01(
+            state.showSnapshot.totalDuration <= 0
+              ? 0
+              : state.currentTime / state.showSnapshot.totalDuration
+          )
         : 0;
       queueSeekToProgress(state, current + delta);
       event.preventDefault();
     }
   });
 
-  state.debugOverlay.classList.toggle('is-hidden', !state.debugOverlayVisible);
-  state.debugOverlay.parentElement?.classList.toggle('is-debug-hidden', !state.debugOverlayVisible);
+  state.debugOverlay.classList.toggle("is-hidden", !state.debugOverlayVisible);
+  state.debugOverlay.parentElement?.classList.toggle("is-debug-hidden", !state.debugOverlayVisible);
   state.debugPanel = panel;
   return panel;
 }
 
-function chartValue(sample: TelemetrySample, key: typeof TELEMETRY_CHARTS[number]['key']): number {
+function chartValue(
+  sample: TelemetrySample,
+  key: (typeof TELEMETRY_CHARTS)[number]["key"]
+): number {
   switch (key) {
-    case 'altitude': return sample.altitude;
-    case 'bank': return sample.bankDeg;
-    case 'pitch': return sample.pitchDeg;
-    case 'range': return sample.range;
+    case "altitude":
+      return sample.altitude;
+    case "bank":
+      return sample.bankDeg;
+    case "pitch":
+      return sample.pitchDeg;
+    case "range":
+      return sample.range;
   }
 }
 
-function createSparklinePath(samples: TelemetrySample[], key: typeof TELEMETRY_CHARTS[number]['key']): string {
+function createSparklinePath(
+  samples: TelemetrySample[],
+  key: (typeof TELEMETRY_CHARTS)[number]["key"]
+): string {
   if (samples.length < 2) {
-    return 'M 0 24 L 100 24';
+    return "M 0 24 L 100 24";
   }
 
   const values = samples.map((sample) => chartValue(sample, key));
   let min = Math.min(...values);
   let max = Math.max(...values);
-  if (key === 'bank' || key === 'pitch') {
+  if (key === "bank" || key === "pitch") {
     const maxAbs = Math.max(10, ...values.map((value) => Math.abs(value)));
     min = -maxAbs;
     max = maxAbs;
@@ -808,16 +921,16 @@ function createSparklinePath(samples: TelemetrySample[], key: typeof TELEMETRY_C
       const value = chartValue(sample, key);
       const ratio = (value - min) / (max - min);
       const y = 48 - padBottom - ratio * height;
-      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
-    .join(' ');
+    .join(" ");
 }
 
 function recordTelemetrySample(state: AppState): void {
   const range = Math.hypot(
     state.obj.p.x - state.renderDebug.cameraPos.x,
     state.obj.p.y - state.renderDebug.cameraPos.y,
-    state.obj.p.z - state.renderDebug.cameraPos.z,
+    state.obj.p.z - state.renderDebug.cameraPos.z
   );
   const overallProgress = state.showSnapshot
     ? clamp01(state.currentTime / Math.max(state.showSnapshot.totalDuration, SIMULATION_STEP))
@@ -838,9 +951,13 @@ function recordTelemetrySample(state: AppState): void {
   }
 }
 
+let lastDebugOverlayUpdate = 0;
+const DEBUG_OVERLAY_UPDATE_INTERVAL = 100; // Update UI at 10fps max
+
 function updateDebugOverlay(state: AppState, dt: number): void {
   const panel = initializeDebugOverlay(state);
   const now = performance.now();
+
   state.fpsFrameCount += 1;
   const elapsed = now - state.fpsSampleTime;
   if (elapsed >= 250) {
@@ -850,6 +967,14 @@ function updateDebugOverlay(state: AppState, dt: number): void {
   }
 
   recordTelemetrySample(state);
+
+  // Throttle DOM updates to reduce overhead - telemetry continues at full rate
+  const timeSinceLastUIUpdate = now - lastDebugOverlayUpdate;
+  if (timeSinceLastUIUpdate < DEBUG_OVERLAY_UPDATE_INTERVAL) {
+    return;
+  }
+  lastDebugOverlayUpdate = now;
+
   const latest = state.telemetryHistory[state.telemetryHistory.length - 1];
   const maneuver = state.currentManeuver;
   const progress = state.showSnapshot
@@ -857,35 +982,33 @@ function updateDebugOverlay(state: AppState, dt: number): void {
     : getManeuverProgress(maneuver);
   const progressPercent = Math.round(progress * 100);
   const screen = state.renderDebug.targetScreen;
-  const screenText = screen
-    ? `${screen.x.toFixed(1)} ${screen.y.toFixed(1)}`
-    : 'clipped';
+  const screenText = screen ? `${screen.x.toFixed(1)} ${screen.y.toFixed(1)}` : "clipped";
 
   panel.progressFill.style.width = `${progressPercent}%`;
   panel.progressThumb.style.left = `${progressPercent}%`;
-  panel.progressTrack.setAttribute('aria-valuenow', String(progressPercent));
-  panel.progressTrack.setAttribute('aria-valuetext', `${progressPercent}%`);
+  panel.progressTrack.setAttribute("aria-valuenow", String(progressPercent));
+  panel.progressTrack.setAttribute("aria-valuetext", `${progressPercent}%`);
   panel.progressValue.textContent = `${progressPercent}%`;
-  panel.progressLabel.textContent = `${maneuver?.type ?? 'NONE'} | ${getManeuverMetric(maneuver)}`;
-  panel.pauseButton.classList.toggle('is-active', state.paused);
-  panel.pauseButton.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
-  panel.pauseButton.setAttribute('aria-label', state.paused ? 'Resume render' : 'Pause render');
-  panel.pauseButton.setAttribute('title', state.paused ? 'Resume render' : 'Pause render');
+  panel.progressLabel.textContent = `${maneuver?.type ?? "NONE"} | ${getManeuverMetric(maneuver)}`;
+  panel.pauseButton.classList.toggle("is-active", state.paused);
+  panel.pauseButton.setAttribute("aria-pressed", state.paused ? "true" : "false");
+  panel.pauseButton.setAttribute("aria-label", state.paused ? "Resume render" : "Pause render");
+  panel.pauseButton.setAttribute("title", state.paused ? "Resume render" : "Pause render");
   panel.cameraViewSelect.value = state.cameraView;
   panel.topDownModeSelect.value = state.topDownMode;
-  panel.topDownModeSelect.disabled = state.cameraView !== 'topDown';
+  panel.topDownModeSelect.disabled = state.cameraView !== "topDown";
   const currentPanDeg = cameraPanDegrees(state);
   const currentTiltDeg = cameraTiltDegrees(state);
-  const topDownView = state.cameraView === 'topDown';
+  const topDownView = state.cameraView === "topDown";
   panel.cameraPanRange.disabled = topDownView;
   panel.cameraTiltRange.disabled = topDownView;
   panel.cameraPanRange.value = currentPanDeg.toFixed(0);
   panel.cameraTiltRange.value = currentTiltDeg.toFixed(0);
   panel.cameraZoomRange.value = state.cameraPan.zoom.toFixed(2);
-  panel.cameraPanValue.textContent = topDownView ? 'fixed' : `${fmtSigned(currentPanDeg)} deg`;
-  panel.cameraTiltValue.textContent = topDownView ? 'fixed' : `${fmtSigned(currentTiltDeg)} deg`;
+  panel.cameraPanValue.textContent = topDownView ? "fixed" : `${fmtSigned(currentPanDeg)} deg`;
+  panel.cameraTiltValue.textContent = topDownView ? "fixed" : `${fmtSigned(currentTiltDeg)} deg`;
   panel.cameraZoomValue.textContent = `${state.cameraPan.zoom.toFixed(2)}x`;
-  state.debugOverlay.classList.toggle('is-paused', state.paused);
+  state.debugOverlay.classList.toggle("is-paused", state.paused);
 
   panel.values.aircraft.textContent = getAircraftLabel(state);
   panel.values.maneuver.textContent = getManeuverLabel(state.currentManeuverKey);
@@ -901,9 +1024,9 @@ function updateDebugOverlay(state: AppState, dt: number): void {
   panel.values.collision.textContent = state.renderDebug.objectCollision;
   panel.values.smoke.textContent = `${state.smokeInst.nPth} / ${state.vaporInst.nPth}`;
   panel.values.time.textContent = `${state.currentTime.toFixed(2)} s`;
-  panel.values.paused.textContent = state.paused ? 'yes' : 'no';
+  panel.values.paused.textContent = state.paused ? "yes" : "no";
   panel.values.runtime.textContent = `${state.renderDebug.seed} / ${state.renderDebug.scenario} / ${state.runtime.mapVariant}`;
-  panel.values.heading.textContent = Math.round(latest.headingDeg).toString().padStart(3, '0');
+  panel.values.heading.textContent = Math.round(latest.headingDeg).toString().padStart(3, "0");
   panel.values.pitch.textContent = `${fmtSigned(latest.pitchDeg)} deg`;
   panel.values.bank.textContent = `${fmtSigned(latest.bankDeg)} deg`;
   panel.values.range.textContent = `${latest.range.toFixed(1)} m`;
@@ -915,8 +1038,12 @@ function updateDebugOverlay(state: AppState, dt: number): void {
   panel.headingScale.innerHTML = buildHeadingScale(latest.headingDeg);
 
   for (const chart of TELEMETRY_CHARTS) {
-    panel.chartPaths[chart.key].setAttribute('d', createSparklinePath(state.telemetryHistory, chart.key));
-    panel.chartValues[chart.key].textContent = `${chartValue(latest, chart.key).toFixed(1)} ${chart.unit}`;
+    panel.chartPaths[chart.key].setAttribute(
+      "d",
+      createSparklinePath(state.telemetryHistory, chart.key)
+    );
+    panel.chartValues[chart.key].textContent =
+      `${chartValue(latest, chart.key).toFixed(1)} ${chart.unit}`;
   }
 }
 
@@ -943,51 +1070,35 @@ function proceed(obj: PosAtt, dist: number): void {
 }
 
 function mAhead(dist: number, nextManeuvers: ManeuverState[] = []): ManeuverState {
-  return { type: 'AHEAD', dist, initialDist: dist, nextManeuvers };
+  return { type: "AHEAD", dist, initialDist: dist, nextManeuvers };
 }
 
 function mPitch(ctr: number, sgn: number, nextManeuvers: ManeuverState[] = []): ManeuverState {
-  return { type: 'PITCH', ctr, initialCtr: ctr, sgn, nextManeuvers };
+  return { type: "PITCH", ctr, initialCtr: ctr, sgn, nextManeuvers };
 }
 
 function mBank(ctr: number, sgn: number, nextManeuvers: ManeuverState[] = []): ManeuverState {
-  return { type: 'BANK', ctr, initialCtr: ctr, sgn, nextManeuvers };
+  return { type: "BANK", ctr, initialCtr: ctr, sgn, nextManeuvers };
 }
 
 function mTurn(ctr: number, sgn: number, nextManeuvers: ManeuverState[] = []): ManeuverState {
-  return { type: 'TURN', ctr, initialCtr: ctr, sgn, nextManeuvers };
+  return { type: "TURN", ctr, initialCtr: ctr, sgn, nextManeuvers };
 }
 
 const maneuverCreators = [
   (): ManeuverState => mAhead(1000.0),
-  (): ManeuverState => mAhead(300.0, [
-    mBank(65536, 1, [
-      mAhead(300.0),
-    ]),
-  ]),
-  (): ManeuverState => mAhead(500.0, [
-    mPitch(65536, 1, [
-      mAhead(500.0),
-    ]),
-  ]),
-  (): ManeuverState => mAhead(450.0, [
-    mPitch(12800, 1, [
-      mAhead(500.0),
-    ]),
-  ]),
-  (): ManeuverState => mAhead(400.0, [
-    mPitch(0x4000, 1, [
-      mAhead(50.0, [
-        mPitch(0x6000, 1, [
-          mBank(0x18000, 1, [
-            mPitch(0x6000, 1, [
-              mAhead(50.0, [
-                mPitch(0x6000, 1, [
-                  mBank(0x18000, 1, [
-                    mPitch(0x2000, 1, [
-                      mAhead(400.0),
-                    ]),
-                  ]),
+  (): ManeuverState => mAhead(300.0, [mBank(65536, 1, [mAhead(300.0)])]),
+  (): ManeuverState => mAhead(500.0, [mPitch(65536, 1, [mAhead(500.0)])]),
+  (): ManeuverState => mAhead(450.0, [mPitch(12800, 1, [mAhead(500.0)])]),
+  (): ManeuverState =>
+    mAhead(400.0, [
+      mPitch(0x4000, 1, [
+        mAhead(50.0, [
+          mPitch(0x6000, 1, [
+            mBank(0x18000, 1, [
+              mPitch(0x6000, 1, [
+                mAhead(50.0, [
+                  mPitch(0x6000, 1, [mBank(0x18000, 1, [mPitch(0x2000, 1, [mAhead(400.0)])])]),
                 ]),
               ]),
             ]),
@@ -995,16 +1106,8 @@ const maneuverCreators = [
         ]),
       ]),
     ]),
-  ]),
-  (): ManeuverState => mAhead(450.0, [
-    mBank(12800, 1, [
-      mTurn(65536, 1, [
-        mBank(12800, -1, [
-          mAhead(500.0),
-        ]),
-      ]),
-    ]),
-  ]),
+  (): ManeuverState =>
+    mAhead(450.0, [mBank(12800, 1, [mTurn(65536, 1, [mBank(12800, -1, [mAhead(500.0)])])])]),
 ];
 
 const maneuverIndexByKey: Record<ManeuverKey, number> = {
@@ -1022,18 +1125,18 @@ function createManeuverByKey(key: ManeuverKey): ManeuverState {
 
 function pickScenarioManeuverKey(state: AppState): ManeuverKey | null {
   switch (state.runtime.scenario) {
-    case 'straight':
-    case 'runway':
-    case 'signal':
-      return 'straight';
-    case 'roll':
-      return 'roll';
-    case 'loop':
-    case 'smoke_ribbon':
-    case 'smoke_wire':
-    case 'smoke_trail':
-    case 'smoke_solid':
-      return 'loop';
+    case "straight":
+    case "runway":
+    case "signal":
+      return "straight";
+    case "roll":
+      return "roll";
+    case "loop":
+    case "smoke_ribbon":
+    case "smoke_wire":
+    case "smoke_trail":
+    case "smoke_solid":
+      return "loop";
     default:
       return null;
   }
@@ -1041,13 +1144,13 @@ function pickScenarioManeuverKey(state: AppState): ManeuverKey | null {
 
 function applyScenarioSpawn(state: AppState): boolean {
   switch (state.runtime.scenario) {
-    case 'runway':
+    case "runway":
       state.obj.p = vec3(92.86, state.config.altitude, -900);
       state.obj.a = { h: 0, p: 0, b: 0 };
       state.eye.p = vec3(20, state.config.altitude + 15, -1080);
       state.eye.a = { h: 0, p: 0, b: 0 };
       return true;
-    case 'signal':
+    case "signal":
       state.obj.p = vec3(96, state.config.altitude, 1300);
       state.obj.a = { h: 0, p: 0, b: 0 };
       state.eye.p = vec3(60, state.config.altitude + 25, 1050);
@@ -1061,10 +1164,10 @@ function applyScenarioSpawn(state: AppState): boolean {
 function beginManeuverEffects(maneuver: ManeuverState | null, state: AppState): void {
   if (!maneuver) return;
 
-  if (maneuver.type === 'PITCH' || maneuver.type === 'TURN') {
+  if (maneuver.type === "PITCH" || maneuver.type === "TURN") {
     beginAppendSmokeNode(state.smokeInst);
     beginAppendSmokeNode(state.vaporInst);
-  } else if (maneuver.type === 'BANK') {
+  } else if (maneuver.type === "BANK") {
     beginAppendSmokeNode(state.vaporInst);
   }
 }
@@ -1072,10 +1175,10 @@ function beginManeuverEffects(maneuver: ManeuverState | null, state: AppState): 
 function endManeuverEffects(maneuver: ManeuverState | null, state: AppState): void {
   if (!maneuver) return;
 
-  if (maneuver.type === 'PITCH' || maneuver.type === 'TURN') {
+  if (maneuver.type === "PITCH" || maneuver.type === "TURN") {
     endAppendSmokeNode(state.smokeInst);
     endAppendSmokeNode(state.vaporInst);
-  } else if (maneuver.type === 'BANK') {
+  } else if (maneuver.type === "BANK") {
     endAppendSmokeNode(state.vaporInst);
   }
 }
@@ -1097,12 +1200,12 @@ function stepSimulation(state: AppState, dt: number): void {
   const vel = dt * 100.0;
 
   switch (maneuver.type) {
-    case 'AHEAD':
+    case "AHEAD":
       proceed(state.obj, vel);
       maneuver.dist = (maneuver.dist ?? 0) - vel;
       if ((maneuver.dist ?? 0) <= 0) advanceToNextManeuver(state);
       break;
-    case 'PITCH':
+    case "PITCH":
       proceed(state.obj, vel);
       pitchUp(state.obj.a, state.obj.a, (maneuver.sgn ?? 1) * dt * 8192, 0);
       appendSmokeNode(state.smokeInst, state.obj, state.currentTime);
@@ -1110,14 +1213,14 @@ function stepSimulation(state: AppState, dt: number): void {
       maneuver.ctr = (maneuver.ctr ?? 0) - dt * 8192;
       if ((maneuver.ctr ?? 0) <= 0) advanceToNextManeuver(state);
       break;
-    case 'BANK':
+    case "BANK":
       proceed(state.obj, vel);
       state.obj.a.b += (maneuver.sgn ?? 1) * dt * 32768;
       appendSmokeNode(state.vaporInst, state.obj, state.currentTime);
       maneuver.ctr = (maneuver.ctr ?? 0) - dt * 32768;
       if ((maneuver.ctr ?? 0) <= 0) advanceToNextManeuver(state);
       break;
-    case 'TURN':
+    case "TURN":
       appendSmokeNode(state.smokeInst, state.obj, state.currentTime);
       appendSmokeNode(state.vaporInst, state.obj, state.currentTime);
       proceed(state.obj, vel);
@@ -1152,7 +1255,7 @@ function applySeekToProgress(state: AppState, gpuAircraftList: GpuSrf[], ratio: 
   restoreShowFromSnapshot(state, gpuAircraftList);
   const targetTime = Math.min(
     clamp01(ratio) * snapshot.totalDuration,
-    Math.max(0, snapshot.totalDuration - 0.000001),
+    Math.max(0, snapshot.totalDuration - 0.000001)
   );
   let remaining = targetTime;
   while (!state.quitFlag && remaining >= SIMULATION_STEP) {
@@ -1173,7 +1276,10 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
   clearSmokeInstance(state.vaporInst);
 
   if (state.runtime.forcedAircraftIndex !== null) {
-    const clamped = Math.max(0, Math.min(state.aircraft.length - 1, Math.floor(state.runtime.forcedAircraftIndex)));
+    const clamped = Math.max(
+      0,
+      Math.min(state.aircraft.length - 1, Math.floor(state.runtime.forcedAircraftIndex))
+    );
     state.show.aircraft = clamped;
   } else {
     state.show.aircraft = Math.floor(state.random() * state.aircraft.length);
@@ -1183,11 +1289,7 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
   if (!applyScenarioSpawn(state)) {
     const dir = Math.floor(state.random() * 0x10000);
     const altitude = state.config.altitude;
-    state.obj.p = vec3(
-      -500.0 * sin16(dir),
-      altitude,
-      500.0 * cos16(dir),
-    );
+    state.obj.p = vec3(-500.0 * sin16(dir), altitude, 500.0 * cos16(dir));
     state.obj.a = { h: dir + 0x8000, p: 0, b: 0 };
 
     const distance = Math.floor(state.random() * 150 + 50);
@@ -1195,7 +1297,7 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
     state.eye.p = vec3(
       -distance * sin16(dir2),
       altitude + (state.random() * 50 - 25),
-      distance * cos16(dir2),
+      distance * cos16(dir2)
     );
     state.eye.a = { h: 0, p: 0, b: 0 };
   }
@@ -1205,7 +1307,9 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
     state.currentManeuver = createManeuverByKey(state.runtime.forcedManeuver);
   } else {
     state.currentManeuverKey = pickScenarioManeuverKey(state);
-    state.currentManeuver = state.currentManeuverKey ? createManeuverByKey(state.currentManeuverKey) : null;
+    state.currentManeuver = state.currentManeuverKey
+      ? createManeuverByKey(state.currentManeuverKey)
+      : null;
   }
   if (state.currentManeuver === null) {
     const acro = MANEUVER_OPTIONS[Math.floor(state.random() * MANEUVER_OPTIONS.length)];
@@ -1214,15 +1318,15 @@ function startNewShow(state: AppState, gpuAircraftList: GpuSrf[]): void {
   }
   state.showSnapshot = state.currentManeuverKey
     ? {
-      aircraftIndex: state.show.aircraft,
-      maneuverKey: state.currentManeuverKey,
-      obj: clonePosAtt(state.obj),
-      eye: clonePosAtt(state.eye),
-      totalDuration: maneuverDurationSeconds(state.currentManeuver),
-    }
+        aircraftIndex: state.show.aircraft,
+        maneuverKey: state.currentManeuverKey,
+        obj: clonePosAtt(state.obj),
+        eye: clonePosAtt(state.eye),
+        totalDuration: maneuverDurationSeconds(state.currentManeuver),
+      }
     : null;
   beginManeuverEffects(state.currentManeuver, state);
-  if (state.cameraView === 'topDown' && state.topDownMode === 'static') {
+  if (state.cameraView === "topDown" && state.topDownMode === "static") {
     latchTopDownAnchor(state);
   }
   lastTime = 0;
@@ -1236,30 +1340,60 @@ function configureSmokeClass(state: AppState): void {
 
   if (state.config.smokeType === ARS_RIBBONSMOKE) {
     state.smokeClass.rbn = {
-      t0: 0.2, t1: 30.0, iniw: 0, maxw: 10, dw: 3,
-      inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+      t0: 0.2,
+      t1: 30.0,
+      iniw: 0,
+      maxw: 10,
+      dw: 3,
+      inic: { r: 1, g: 1, b: 1 },
+      endc: { r: 1, g: 1, b: 1 },
+      tc: 0,
     };
   } else if (state.config.smokeType === ARS_WIRESMOKE) {
     state.smokeClass.wir = {
-      t0: 0.2, t1: 30.0, iniw: 0, maxw: 10, dw: 3,
-      inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+      t0: 0.2,
+      t1: 30.0,
+      iniw: 0,
+      maxw: 10,
+      dw: 3,
+      inic: { r: 1, g: 1, b: 1 },
+      endc: { r: 1, g: 1, b: 1 },
+      tc: 0,
     };
   } else if (state.config.smokeType === ARS_TRAILSMOKE) {
     state.smokeClass.trl = {
-      t0: 0.2, t1: 30.0, iniw: 0, maxw: 10, dw: 3,
-      inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+      t0: 0.2,
+      t1: 30.0,
+      iniw: 0,
+      maxw: 10,
+      dw: 3,
+      inic: { r: 1, g: 1, b: 1 },
+      endc: { r: 1, g: 1, b: 1 },
+      tc: 0,
     };
   } else if (state.config.smokeType === ARS_SOLIDSMOKE) {
     state.smokeClass.sld = {
-      t0: 0.2, t1: 30.0, iniw: 0, maxw: 10, dw: 3,
-      inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+      t0: 0.2,
+      t1: 30.0,
+      iniw: 0,
+      maxw: 10,
+      dw: 3,
+      inic: { r: 1, g: 1, b: 1 },
+      endc: { r: 1, g: 1, b: 1 },
+      tc: 0,
     };
   }
 
   state.vaporClass = initSmokeClass(ARS_TRAILSMOKE);
   state.vaporClass.trl = {
-    t0: 0.1, t1: 1.0, iniw: 10, maxw: 10, dw: 0,
-    inic: { r: 1, g: 1, b: 1 }, endc: { r: 1, g: 1, b: 1 }, tc: 0,
+    t0: 0.1,
+    t1: 1.0,
+    iniw: 10,
+    maxw: 10,
+    dw: 0,
+    inic: { r: 1, g: 1, b: 1 },
+    endc: { r: 1, g: 1, b: 1 },
+    tc: 0,
   };
 }
 
@@ -1267,10 +1401,10 @@ export function flyByMain(
   state: AppState,
   renderer: Renderer,
   gpuAircraftList: GpuSrf[],
-  gpuField: GpuField,
+  gpuField: GpuField
 ): void {
   if (state.aircraft.length === 0) {
-    console.error('No aircraft loaded');
+    console.error("No aircraft loaded");
     return;
   }
 
@@ -1330,15 +1464,12 @@ export function flyByMain(
   requestAnimationFrame(mainLoop);
 }
 
-function drawScreen(
-  state: AppState,
-  renderer: Renderer,
-): void {
+function drawScreen(state: AppState, renderer: Renderer): void {
   if (state.helpCount > 0) {
     state.helpCount -= 1;
-    state.helpOverlay.classList.add('is-visible');
+    state.helpOverlay.classList.add("is-visible");
   } else {
-    state.helpOverlay.classList.remove('is-visible');
+    state.helpOverlay.classList.remove("is-visible");
   }
 
   const renderEye = resolveRenderCamera(state);
@@ -1371,7 +1502,12 @@ function drawScreen(
   const objElevation = getFieldElevation(state.field, rootPos, state.obj.p, state.obj.a.h);
   const objCollision = getFieldSrfCollision(state.field, rootPos, state.obj.p, 0);
   const referenceScreens: string[] = [];
-  const referenceCaptures: Array<{ label: string; x: number | null; y: number | null; clipped: boolean }> = [];
+  const referenceCaptures: Array<{
+    label: string;
+    x: number | null;
+    y: number | null;
+    clipped: boolean;
+  }> = [];
   for (const reference of CAPTURE_REFERENCE_POINTS) {
     const refCam = vec3(0, 0, 0);
     convGtoL(refCam, reference.point, {
@@ -1382,7 +1518,9 @@ function drawScreen(
     if (refCam.z > prj.nearz) {
       const refScreen = { x: 0, y: 0 };
       project(refScreen, refCam, prj);
-      referenceScreens.push(`${reference.label}:${refScreen.x.toFixed(0)},${refScreen.y.toFixed(0)}`);
+      referenceScreens.push(
+        `${reference.label}:${refScreen.x.toFixed(0)},${refScreen.y.toFixed(0)}`
+      );
       referenceCaptures.push({
         label: reference.label,
         x: refScreen.x,
@@ -1399,15 +1537,17 @@ function drawScreen(
       });
     }
   }
-  state.renderDebug.objectRegion = objRegion.inside ? `${objRegion.id}:${objRegion.tag || '-'}` : '-';
-  state.renderDebug.eyeRegion = eyeRegion.inside ? `${eyeRegion.id}:${eyeRegion.tag || '-'}` : '-';
+  state.renderDebug.objectRegion = objRegion.inside
+    ? `${objRegion.id}:${objRegion.tag || "-"}`
+    : "-";
+  state.renderDebug.eyeRegion = eyeRegion.inside ? `${eyeRegion.id}:${eyeRegion.tag || "-"}` : "-";
   state.renderDebug.objectElevation = objElevation.inside
-    ? `${objElevation.elevation.toFixed(1)} ${objElevation.id}:${objElevation.tag || '-'}`
-    : '-';
+    ? `${objElevation.elevation.toFixed(1)} ${objElevation.id}:${objElevation.tag || "-"}`
+    : "-";
   state.renderDebug.objectCollision = objCollision.inside
-    ? `${objCollision.id}:${objCollision.tag || '-'}`
-    : '-';
-  state.renderDebug.referenceScreens = referenceScreens.join(' ');
+    ? `${objCollision.id}:${objCollision.tag || "-"}`
+    : "-";
+  state.renderDebug.referenceScreens = referenceScreens.join(" ");
 
   const smokeVerts = drawSmoke(state.smokeClass, state.smokeInst, state.currentTime, renderEye);
   const vaporVerts = drawSmoke(state.vaporClass, state.vaporInst, state.currentTime, renderEye);
@@ -1417,21 +1557,25 @@ function drawScreen(
     cameraZoom: state.cameraPan.zoom,
     environment: state.environment,
     gpuField: state.gpuField,
-    dynamicActors: [{
-      key: getAircraftLabel(state),
-      kind: 'aircraft',
-      gpuModel: state.gpuAircraft,
-      transform: state.obj,
-    }],
+    dynamicActors: [
+      {
+        key: getAircraftLabel(state),
+        kind: "aircraft",
+        gpuModel: state.gpuAircraft,
+        transform: state.obj,
+      },
+    ],
     smokeGeometry: smokeVerts,
     vaporGeometry: vaporVerts,
   };
 
   renderer.render(snapshot);
 
-  (window as Window & {
-    __flybyCapture?: unknown;
-  }).__flybyCapture = {
+  (
+    window as Window & {
+      __flybyCapture?: unknown;
+    }
+  ).__flybyCapture = {
     mode: state.config.mode,
     map: state.runtime.mapVariant,
     seed: state.runtime.seed,

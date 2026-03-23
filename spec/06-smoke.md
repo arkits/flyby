@@ -21,7 +21,9 @@ and derived left/up vectors for width expansion.
 ## Smoke Types
 
 ### Ribbon Smoke (DEFAULT)
+
 Flat ribbon trailing behind aircraft. Two triangles per segment.
+
 ```
     n0.left * w0/2     n1.left * w1/2
     +-------------------+
@@ -37,12 +39,15 @@ Flat ribbon trailing behind aircraft. Two triangles per segment.
 ```
 
 ### Wire Smoke
+
 Simple line segments connecting nodes.
 
 ### Trail Smoke
+
 Two parallel lines (like contrails), offset by left vector.
 
 ### Solid Smoke
+
 3D volumetric tube with cross-shaped cross-section (4 quad faces per segment).
 Uses left and up vectors for the cross shape.
 
@@ -59,6 +64,7 @@ DrawSmoke → iterates all trail segments, generates geometry
 ## Node Structure
 
 Each smoke node stores:
+
 - `axs: Axis` — position + attitude at this point (built via `pntAngToAxis`)
 - `left: Vec3` — X-axis rotated by attitude (for width offset)
 - `up: Vec3` — Y-axis rotated by attitude (for solid smoke cross)
@@ -69,9 +75,9 @@ Each smoke node stores:
 ```typescript
 function appendSmokeNode(inst: SmokeInst, pos: PosAtt, t: number): void {
   const node = new SmokeNode();
-  node.axs = pntAngToAxis(pos);       // position + attitude + trig cache
-  node.left = rotFastLtoG(Vec3.X, node.axs.t);  // local X → global
-  node.up = rotFastLtoG(Vec3.Y, node.axs.t);    // local Y → global
+  node.axs = pntAngToAxis(pos); // position + attitude + trig cache
+  node.left = rotFastLtoG(Vec3.X, node.axs.t); // local X → global
+  node.up = rotFastLtoG(Vec3.Y, node.axs.t); // local Y → global
   node.t = t;
   inst.pth.push(node);
 }
@@ -91,6 +97,7 @@ Max tips per instance: `ARS_MAX_TIP_PER_INST = 8`. When exceeded, oldest tip is 
 ## Overflow Handling
 
 When node count exceeds `nMax`:
+
 1. If `nDel > 0`: delete oldest `nDel` nodes, shift array, adjust tip indices
 2. If `nDel == 0`: overflow error (silently drop)
 
@@ -99,14 +106,12 @@ When node count exceeds `nMax`:
 ### ArInsSmoke (ASMOKE.C:504-512)
 
 ```typescript
-function drawSmoke(
-  cla: SmokeClass, inst: SmokeInst, ctim: number, eye: PosAtt
-): RenderVertex[] {
+function drawSmoke(cla: SmokeClass, inst: SmokeInst, ctim: number, eye: PosAtt): RenderVertex[] {
   const vertices: RenderVertex[] = [];
   for (let i = 0; i < inst.nTip; i++) {
-    const nSta = inst.tip[i * 2 + 1];  // end of trail (newest)
-    const nEnd = inst.tip[i * 2];       // start of trail (oldest)
-    
+    const nSta = inst.tip[i * 2 + 1]; // end of trail (newest)
+    const nEnd = inst.tip[i * 2]; // start of trail (oldest)
+
     if (cla.sw & ARS_RIBBONSMOKE) {
       drawRibbonTips(cla.rbn, inst.pth, nEnd, nSta, ctim, eye, vertices);
     }
@@ -141,27 +146,31 @@ For each segment between node[n0] and node[n1]:
 
 ```typescript
 function insRibbonSmoke(
-  att: SmokeAttr, node: SmokeNode[], n0: number, n1: number, t: number,
+  att: SmokeAttr,
+  node: SmokeNode[],
+  n0: number,
+  n1: number,
+  t: number,
   vertices: RenderVertex[]
 ): void {
-  const rt0 = t - node[n0].t;  // age of node n0
-  const rt1 = t - node[n1].t;  // age of node n1
-  
-  if (rt0 < att.t0 || rt1 > att.t1) return;  // outside life span
-  
+  const rt0 = t - node[n0].t; // age of node n0
+  const rt1 = t - node[n1].t; // age of node n1
+
+  if (rt0 < att.t0 || rt1 > att.t1) return; // outside life span
+
   const c = getCurrentSmokeColor(att, rt0);
   const w0 = Math.min(att.iniw + att.dw * rt0, att.maxw);
   const w1 = Math.min(att.iniw + att.dw * rt1, att.maxw);
-  
+
   const v1 = mulV3(node[n0].left, w0 / 2);
   const v2 = mulV3(node[n1].left, w1 / 2);
-  
+
   // Quad corners
-  const sq0 = addV3(node[n0].axs.p, v1);   // n0 +left
-  const sq1 = subV3(node[n0].axs.p, v1);   // n0 -left
-  const sq2 = addV3(node[n1].axs.p, v2);   // n1 +left
-  const sq3 = subV3(node[n1].axs.p, v2);   // n1 -left
-  
+  const sq0 = addV3(node[n0].axs.p, v1); // n0 +left
+  const sq1 = subV3(node[n0].axs.p, v1); // n0 -left
+  const sq2 = addV3(node[n1].axs.p, v2); // n1 +left
+  const sq3 = subV3(node[n1].axs.p, v2); // n1 -left
+
   // Two triangles
   pushTri(vertices, sq0, sq1, sq2, c);
   pushTri(vertices, sq2, sq1, sq3, c);

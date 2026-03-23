@@ -40,22 +40,22 @@ class Renderer {
   context: GPUCanvasContext;
   format: GPUTextureFormat; // bgra8unorm
   depthTexture: GPUTexture;
-  
+
   // Pipelines
-  litPipeline: GPURenderPipeline;      // Flat-shaded per-face
-  unlitPipeline: GPURenderPipeline;    // Flat color, no lighting
-  linePipeline: GPURenderPipeline;     // For grid lines, wire smoke
-  
+  litPipeline: GPURenderPipeline; // Flat-shaded per-face
+  unlitPipeline: GPURenderPipeline; // Flat color, no lighting
+  linePipeline: GPURenderPipeline; // For grid lines, wire smoke
+
   // Uniforms
-  viewProjBuffer: GPUBuffer;           // mat4 view-projection
-  modelBuffer: GPUBuffer;              // mat4 model transform
-  lightBuffer: GPUBuffer;              // vec3 light pos + vec3 camera pos
-  
+  viewProjBuffer: GPUBuffer; // mat4 view-projection
+  modelBuffer: GPUBuffer; // mat4 model transform
+  lightBuffer: GPUBuffer; // vec3 light pos + vec3 camera pos
+
   // Pre-built geometry
   skyGroundBuffer: GPUBuffer;
   gridBuffer: GPUBuffer;
-  
-  async init(canvas: HTMLCanvasElement): Promise<void>
+
+  async init(canvas: HTMLCanvasElement): Promise<void>;
 }
 ```
 
@@ -79,6 +79,7 @@ class Renderer {
 Used for: Aircraft models, field objects (hangars, tower), terrain, PC2 overlays
 
 **Vertex shader input:**
+
 ```wgsl
 @location(0) position: vec3f,
 @location(1) normal: vec3f,    // face normal (flat shading)
@@ -87,6 +88,7 @@ Used for: Aircraft models, field objects (hangars, tower), terrain, PC2 overlays
 ```
 
 **Vertex shader:**
+
 ```wgsl
 // Transform position by model then view-projection
 let worldPos = modelMatrix * vec4f(input.position, 1.0);
@@ -98,6 +100,7 @@ output.bright = input.bright;
 ```
 
 **Fragment shader:**
+
 ```wgsl
 if (bright > 0.5) {
   // Unlit: flat color
@@ -118,6 +121,7 @@ return vec4f(finalColor, 1.0);
 ```
 
 **Light position** (from FLYBY.C:487-488):
+
 ```
 light = eye.position + {0, 1000, 0}  // light is always above camera
 ```
@@ -209,8 +213,8 @@ For each SrfModel, pre-build a GPU vertex buffer at load time:
 
 ```typescript
 interface SrfGpuModel {
-  vertexBuffer: GPUBuffer;   // Static vertex data
-  vertexCount: number;       // Total triangle vertex count
+  vertexBuffer: GPUBuffer; // Static vertex data
+  vertexCount: number; // Total triangle vertex count
 }
 
 function buildSrfGpuBuffer(model: SrfModel): SrfGpuModel {
@@ -220,7 +224,6 @@ function buildSrfGpuBuffer(model: SrfModel): SrfGpuModel {
   //     Push: position[v0], faceNormal, faceColor, bright
   //     Push: position[vi], faceNormal, faceColor, bright
   //     Push: position[vi+1], faceNormal, faceColor, bright
-  
   // Stride: 10 floats per vertex
   // [x, y, z, nx, ny, nz, r, g, b, bright]
 }

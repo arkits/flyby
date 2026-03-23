@@ -1,93 +1,104 @@
 // FLYBY2 — Main Entry Point
 
-import './style.css';
+import "./style.css";
 import type {
-  AppMode, Config, AppState, SrfModel, GpuSrf, GpuField, RuntimeOptions, FlybyMode, ManeuverKey, CaptureScenario, MapVariant,
-} from './types';
-import {
-  ARS_SOLIDSMOKE, ARS_RIBBONSMOKE, ARS_TRAILSMOKE, ARS_WIRESMOKE,
-} from './types';
-import { loadSrf } from './srf-parser';
-import { loadField } from './fld-parser';
-import { enhanceFieldForMap, resolveFieldFileForMap } from './airport-enhancement';
-import { resolveMapEnvironment } from './environment';
-import { Renderer } from './renderer';
-import { GameRuntime } from './game-runtime';
-import { initSmokeClass, initSmokeInstance } from './smoke';
-import { registerInputHandler } from './input';
-import { flyByMain } from './flight';
+  AppMode,
+  Config,
+  AppState,
+  SrfModel,
+  GpuSrf,
+  GpuField,
+  RuntimeOptions,
+  FlybyMode,
+  ManeuverKey,
+  CaptureScenario,
+  MapVariant,
+} from "./types";
+import { ARS_SOLIDSMOKE, ARS_RIBBONSMOKE, ARS_TRAILSMOKE, ARS_WIRESMOKE } from "./types";
+import { loadSrf } from "./srf-parser";
+import { loadField } from "./fld-parser";
+import { enhanceFieldForMap, resolveFieldFileForMap } from "./airport-enhancement";
+import { resolveMapEnvironment } from "./environment";
+import { Renderer } from "./renderer";
+import { GameRuntime } from "./game-runtime";
+import { initSmokeClass, initSmokeInstance } from "./smoke";
+import { registerInputHandler } from "./input";
+import { flyByMain } from "./flight";
 
 const SCREENSAVER_AIRCRAFT = [
-  'a6.srf',
-  'angels.srf',
-  'av8b.srf',
-  'ea6b.srf',
-  'f1.srf',
-  'f117a.srf',
-  'f14sprd.srf',
-  'f14swbk.srf',
-  'f15.srf',
-  'f16.srf',
-  'f18.srf',
-  'f86blue.srf',
-  'mig21.srf',
-  'mig23spd.srf',
-  'mig23wbk.srf',
-  'mrg2000.srf',
-  'su27.srf',
-  't2blue.srf',
-  't400.srf',
-  't4blue.srf',
-  'thunder.srf',
-  'viggen.srf',
+  "a6.srf",
+  "angels.srf",
+  "av8b.srf",
+  "ea6b.srf",
+  "f1.srf",
+  "f117a.srf",
+  "f14sprd.srf",
+  "f14swbk.srf",
+  "f15.srf",
+  "f16.srf",
+  "f18.srf",
+  "f86blue.srf",
+  "mig21.srf",
+  "mig23spd.srf",
+  "mig23wbk.srf",
+  "mrg2000.srf",
+  "su27.srf",
+  "t2blue.srf",
+  "t400.srf",
+  "t4blue.srf",
+  "thunder.srf",
+  "viggen.srf",
 ];
 
 function parseMode(value: string | null): FlybyMode {
-  return value === 'flyby2_s' ? 'flyby2_s' : 'flyby2';
+  return value === "flyby2_s" ? "flyby2_s" : "flyby2";
 }
 
 function parseAppMode(value: string | null): AppMode {
   switch (value) {
-    case 'freeflight':
-    case 'free-flight':
-    case 'flight':
-      return 'freeFlight';
-    case 'drive':
-    case 'car':
-      return 'drive';
+    case "freeflight":
+    case "free-flight":
+    case "flight":
+      return "freeFlight";
+    case "drive":
+    case "car":
+      return "drive";
     default:
-      return 'scriptedFlyby';
+      return "scriptedFlyby";
   }
 }
 
 function parseMapVariant(value: string | null): MapVariant {
   switch (value) {
-    case 'airport':
-    case 'raw-airport':
-      return 'airport';
-    case 'airport-improved':
-    case 'airport_improved':
-    case 'showcase':
-      return 'airport-improved';
-    case 'airport-night':
-    case 'night':
-      return 'airport-night';
-    case 'downtown':
-    case 'city':
-      return 'downtown';
+    case "airport":
+    case "raw-airport":
+      return "airport";
+    case "airport-improved":
+    case "airport_improved":
+    case "showcase":
+      return "airport-improved";
+    case "airport-night":
+    case "night":
+      return "airport-night";
+    case "downtown":
+    case "city":
+      return "downtown";
+    case "san-francisco":
+    case "sf":
+      return "san-francisco";
     default:
-      return 'airport-improved';
+      return "airport-improved";
   }
 }
 
 function parseManeuver(value: string | null): ManeuverKey | null {
   switch (value) {
-    case 'straight':
-    case 'roll':
-    case 'loop':
-    case 'climb':
-    case 'eight':
-    case 'turn360':
+    case "straight":
+    case "roll":
+    case "loop":
+    case "climb":
+    case "eight":
+    case "turn360":
       return value;
     default:
       return null;
@@ -96,25 +107,30 @@ function parseManeuver(value: string | null): ManeuverKey | null {
 
 function parseSmokeOverride(value: string | null): number | null {
   switch (value) {
-    case 'ribbon': return ARS_RIBBONSMOKE;
-    case 'wire': return ARS_WIRESMOKE;
-    case 'trail': return ARS_TRAILSMOKE;
-    case 'solid': return ARS_SOLIDSMOKE;
-    default: return null;
+    case "ribbon":
+      return ARS_RIBBONSMOKE;
+    case "wire":
+      return ARS_WIRESMOKE;
+    case "trail":
+      return ARS_TRAILSMOKE;
+    case "solid":
+      return ARS_SOLIDSMOKE;
+    default:
+      return null;
   }
 }
 
 function parseCaptureScenario(value: string | null): CaptureScenario | null {
   switch (value) {
-    case 'straight':
-    case 'roll':
-    case 'loop':
-    case 'runway':
-    case 'signal':
-    case 'smoke_ribbon':
-    case 'smoke_wire':
-    case 'smoke_trail':
-    case 'smoke_solid':
+    case "straight":
+    case "roll":
+    case "loop":
+    case "runway":
+    case "signal":
+    case "smoke_ribbon":
+    case "smoke_wire":
+    case "smoke_trail":
+    case "smoke_solid":
       return value;
     default:
       return null;
@@ -122,7 +138,7 @@ function parseCaptureScenario(value: string | null): CaptureScenario | null {
 }
 
 function parseNumber(value: string | null): number | null {
-  if (value === null || value === '') return null;
+  if (value === null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -130,14 +146,14 @@ function parseNumber(value: string | null): number | null {
 function getRuntimeOptions(): RuntimeOptions {
   const params = new URLSearchParams(window.location.search);
   return {
-    appMode: parseAppMode(params.get('app')),
-    mode: parseMode(params.get('mode')),
-    mapVariant: parseMapVariant(params.get('map')),
-    seed: parseNumber(params.get('seed')),
-    scenario: parseCaptureScenario(params.get('scenario')),
-    forcedAircraftIndex: parseNumber(params.get('aircraft')),
-    forcedManeuver: parseManeuver(params.get('maneuver')),
-    smokeOverride: parseSmokeOverride(params.get('smoke')),
+    appMode: parseAppMode(params.get("app")),
+    mode: parseMode(params.get("mode")),
+    mapVariant: parseMapVariant(params.get("map")),
+    seed: parseNumber(params.get("seed")),
+    scenario: parseCaptureScenario(params.get("scenario")),
+    forcedAircraftIndex: parseNumber(params.get("aircraft")),
+    forcedManeuver: parseManeuver(params.get("maneuver")),
+    smokeOverride: parseSmokeOverride(params.get("smoke")),
   };
 }
 
@@ -146,20 +162,25 @@ function createRandom(seed: number | null): () => number {
     return () => Math.random();
   }
 
-  let state = (seed >>> 0) || 1;
+  let state = seed >>> 0 || 1;
   return () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 0x100000000;
   };
 }
 
-function scenarioSmokeType(scenario: RuntimeOptions['scenario']): number | null {
+function scenarioSmokeType(scenario: RuntimeOptions["scenario"]): number | null {
   switch (scenario) {
-    case 'smoke_ribbon': return ARS_RIBBONSMOKE;
-    case 'smoke_wire': return ARS_WIRESMOKE;
-    case 'smoke_trail': return ARS_TRAILSMOKE;
-    case 'smoke_solid': return ARS_SOLIDSMOKE;
-    default: return null;
+    case "smoke_ribbon":
+      return ARS_RIBBONSMOKE;
+    case "smoke_wire":
+      return ARS_WIRESMOKE;
+    case "smoke_trail":
+      return ARS_TRAILSMOKE;
+    case "smoke_solid":
+      return ARS_SOLIDSMOKE;
+    default:
+      return null;
   }
 }
 
@@ -182,15 +203,15 @@ function errorSummary(error: unknown): string {
     const message = error.message.trim();
     return message.length > 0 ? message : error.name;
   }
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     const message = error.trim();
-    return message.length > 0 ? message : 'Unknown failure';
+    return message.length > 0 ? message : "Unknown failure";
   }
-  return 'Unknown failure';
+  return "Unknown failure";
 }
 
 function appendErrorDiagnostics(lines: string[], error: unknown, depth = 0): void {
-  const indent = '  '.repeat(depth);
+  const indent = "  ".repeat(depth);
   if (error instanceof Error) {
     lines.push(`${indent}${error.name}: ${error.message}`);
     if (error.stack) {
@@ -203,7 +224,7 @@ function appendErrorDiagnostics(lines: string[], error: unknown, depth = 0): voi
     }
     return;
   }
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     lines.push(`${indent}${error}`);
     return;
   }
@@ -222,49 +243,53 @@ function buildDiagnostics(stage: string, runtime: RuntimeOptions, error: unknown
     `Map: ${runtime.mapVariant}`,
     `URL: ${window.location.href}`,
     `Timestamp: ${new Date().toLocaleString()}`,
-    '',
-    'Error',
+    "",
+    "Error",
   ];
   appendErrorDiagnostics(lines, error);
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function detectFaultCode(error: unknown): string {
   const message = errorSummary(error).toLowerCase();
-  if (message.includes('webgpu')) return 'WEBGPU_OFFLINE';
-  if (message.includes('failed to fetch')) return 'ASSET_FETCH_FAILURE';
-  if (message.includes('field gpu')) return 'FIELD_BUFFER_FAULT';
-  if (message.includes('device lost')) return 'GPU_DEVICE_LOST';
-  return 'RENDER_BOOT_FAILURE';
+  if (message.includes("webgpu")) return "WEBGPU_OFFLINE";
+  if (message.includes("failed to fetch")) return "ASSET_FETCH_FAILURE";
+  if (message.includes("field gpu")) return "FIELD_BUFFER_FAULT";
+  if (message.includes("device lost")) return "GPU_DEVICE_LOST";
+  return "RENDER_BOOT_FAILURE";
 }
 
 function buildFaultMessage(stage: string, error: unknown): string {
-  if (stage === 'Checking browser WebGPU support') {
-    return 'This browser session cannot start the WebGPU renderer, so the simulation never reached first frame.';
+  if (stage === "Checking browser WebGPU support") {
+    return "This browser session cannot start the WebGPU renderer, so the simulation never reached first frame.";
   }
   return `Startup stopped during ${stage.toLowerCase()}. ${errorSummary(error)}`;
 }
 
 function buildFaultHint(code: string): string {
   switch (code) {
-    case 'WEBGPU_OFFLINE':
-      return 'Use a WebGPU-capable Chromium build, then reload this page.';
-    case 'ASSET_FETCH_FAILURE':
-      return 'The renderer needs its data files online before it can assemble the field.';
-    case 'FIELD_BUFFER_FAULT':
-      return 'The field parser finished, but scene geometry assembly hit malformed data and bailed out.';
-    case 'GPU_DEVICE_LOST':
-      return 'A reload usually reacquires the adapter and rebuilds the pipelines cleanly.';
+    case "WEBGPU_OFFLINE":
+      return "Use a WebGPU-capable Chromium build, then reload this page.";
+    case "ASSET_FETCH_FAILURE":
+      return "The renderer needs its data files online before it can assemble the field.";
+    case "FIELD_BUFFER_FAULT":
+      return "The field parser finished, but scene geometry assembly hit malformed data and bailed out.";
+    case "GPU_DEVICE_LOST":
+      return "A reload usually reacquires the adapter and rebuilds the pipelines cleanly.";
     default:
-      return 'Reload to retry boot, then use diagnostics if the fault repeats.';
+      return "Reload to retry boot, then use diagnostics if the fault repeats.";
   }
 }
 
-function buildFaultPresentation(stage: string, runtime: RuntimeOptions, error: unknown): FaultPresentation {
+function buildFaultPresentation(
+  stage: string,
+  runtime: RuntimeOptions,
+  error: unknown
+): FaultPresentation {
   const code = detectFaultCode(error);
   return {
     code,
-    title: code === 'WEBGPU_OFFLINE' ? 'WebGPU Renderer Offline' : 'Flight Deck Fault',
+    title: code === "WEBGPU_OFFLINE" ? "WebGPU Renderer Offline" : "Flight Deck Fault",
     message: buildFaultMessage(stage, error),
     hint: buildFaultHint(code),
     stage,
@@ -272,9 +297,13 @@ function buildFaultPresentation(stage: string, runtime: RuntimeOptions, error: u
   };
 }
 
-function createFaultOverlay(shell: HTMLElement, host: HTMLElement, runtime: RuntimeOptions): FaultOverlayController {
-  const overlay = document.createElement('aside');
-  overlay.className = 'fault-overlay';
+function createFaultOverlay(
+  shell: HTMLElement,
+  host: HTMLElement,
+  runtime: RuntimeOptions
+): FaultOverlayController {
+  const overlay = document.createElement("aside");
+  overlay.className = "fault-overlay";
   overlay.hidden = true;
   overlay.innerHTML = `
     <div class="fault-card" role="alert" aria-live="assertive">
@@ -322,58 +351,57 @@ function createFaultOverlay(shell: HTMLElement, host: HTMLElement, runtime: Runt
   `;
   host.appendChild(overlay);
 
-  const titleEl = overlay.querySelector<HTMLHeadingElement>('.fault-card__title')!;
-  const messageEl = overlay.querySelector<HTMLParagraphElement>('.fault-card__message')!;
-  const hintEl = overlay.querySelector<HTMLParagraphElement>('.fault-card__hint')!;
+  const titleEl = overlay.querySelector<HTMLHeadingElement>(".fault-card__title")!;
+  const messageEl = overlay.querySelector<HTMLParagraphElement>(".fault-card__message")!;
+  const hintEl = overlay.querySelector<HTMLParagraphElement>(".fault-card__hint")!;
   const stageEl = overlay.querySelector<HTMLElement>('[data-field="stage"]')!;
   const modeEl = overlay.querySelector<HTMLElement>('[data-field="mode"]')!;
   const mapEl = overlay.querySelector<HTMLElement>('[data-field="map"]')!;
   const codeEl = overlay.querySelector<HTMLElement>('[data-field="code"]')!;
-  const detailsEl = overlay.querySelector<HTMLPreElement>('.fault-card__details')!;
+  const detailsEl = overlay.querySelector<HTMLPreElement>(".fault-card__details")!;
   const reloadButton = overlay.querySelector<HTMLButtonElement>('[data-action="reload"]')!;
   const copyButton = overlay.querySelector<HTMLButtonElement>('[data-action="copy"]')!;
   const toggleButton = overlay.querySelector<HTMLButtonElement>('[data-action="toggle"]')!;
 
-  let diagnostics = '';
+  let diagnostics = "";
   let detailsVisible = false;
   let copyResetToken = 0;
 
   function syncDetails(): void {
     detailsEl.hidden = !detailsVisible;
-    toggleButton.textContent = detailsVisible ? 'Hide Diagnostics' : 'Show Diagnostics';
-    overlay.classList.toggle('is-expanded', detailsVisible);
+    toggleButton.textContent = detailsVisible ? "Hide Diagnostics" : "Show Diagnostics";
+    overlay.classList.toggle("is-expanded", detailsVisible);
   }
 
-  reloadButton.addEventListener('click', () => {
+  reloadButton.addEventListener("click", () => {
     window.location.reload();
   });
 
-  toggleButton.addEventListener('click', () => {
+  toggleButton.addEventListener("click", () => {
     detailsVisible = !detailsVisible;
     syncDetails();
   });
 
-  copyButton.addEventListener('click', async () => {
+  copyButton.addEventListener("click", async () => {
     const resetToken = ++copyResetToken;
     try {
       if (!navigator.clipboard) {
-        throw new Error('Clipboard API unavailable');
+        throw new Error("Clipboard API unavailable");
       }
       await navigator.clipboard.writeText(diagnostics);
-      copyButton.textContent = 'Report Copied';
+      copyButton.textContent = "Report Copied";
     } catch {
-      copyButton.textContent = 'Copy Unavailable';
+      copyButton.textContent = "Copy Unavailable";
     }
     window.setTimeout(() => {
       if (copyResetToken === resetToken) {
-        copyButton.textContent = 'Copy Report';
+        copyButton.textContent = "Copy Report";
       }
     }, 1600);
   });
 
-  modeEl.textContent = runtime.appMode === 'scriptedFlyby'
-    ? runtime.mode
-    : `${runtime.appMode} / ${runtime.mode}`;
+  modeEl.textContent =
+    runtime.appMode === "scriptedFlyby" ? runtime.mode : `${runtime.appMode} / ${runtime.mode}`;
   mapEl.textContent = runtime.mapVariant;
 
   return {
@@ -387,13 +415,13 @@ function createFaultOverlay(shell: HTMLElement, host: HTMLElement, runtime: Runt
       detailsEl.textContent = diagnostics;
       detailsVisible = false;
       syncDetails();
-      shell.classList.add('is-faulted');
+      shell.classList.add("is-faulted");
       overlay.hidden = false;
-      window.requestAnimationFrame(() => overlay.classList.add('is-visible'));
+      window.requestAnimationFrame(() => overlay.classList.add("is-visible"));
     },
     hide(): void {
-      shell.classList.remove('is-faulted');
-      overlay.classList.remove('is-visible', 'is-expanded');
+      shell.classList.remove("is-faulted");
+      overlay.classList.remove("is-visible", "is-expanded");
       overlay.hidden = true;
       detailsVisible = false;
       syncDetails();
@@ -404,13 +432,13 @@ function createFaultOverlay(shell: HTMLElement, host: HTMLElement, runtime: Runt
 function attachGlobalErrorHandlers(
   overlay: FaultOverlayController,
   runtime: RuntimeOptions,
-  getStage: () => string,
+  getStage: () => string
 ): void {
-  window.addEventListener('error', (event) => {
-    const error = event.error ?? new Error(event.message || 'Unhandled window error');
+  window.addEventListener("error", (event) => {
+    const error = event.error ?? new Error(event.message || "Unhandled window error");
     overlay.show(buildFaultPresentation(getStage(), runtime, error));
   });
-  window.addEventListener('unhandledrejection', (event) => {
+  window.addEventListener("unhandledrejection", (event) => {
     overlay.show(buildFaultPresentation(getStage(), runtime, event.reason));
   });
 }
@@ -419,16 +447,24 @@ function attachRendererErrorHandlers(
   renderer: Renderer,
   overlay: FaultOverlayController,
   runtime: RuntimeOptions,
-  getStage: () => string,
+  getStage: () => string
 ): void {
   void renderer.device.lost.then((info) => {
-    overlay.show(buildFaultPresentation(getStage(), runtime, new Error(`GPU device lost (${info.reason}): ${info.message}`)));
+    overlay.show(
+      buildFaultPresentation(
+        getStage(),
+        runtime,
+        new Error(`GPU device lost (${info.reason}): ${info.message}`)
+      )
+    );
   });
 
-  renderer.device.addEventListener('uncapturederror', (event) => {
+  renderer.device.addEventListener("uncapturederror", (event) => {
     const gpuError = (event as Event & { error?: { message?: string } }).error;
-    const message = gpuError?.message ?? 'Unknown uncaptured GPU error';
-    overlay.show(buildFaultPresentation(getStage(), runtime, new Error(`Uncaptured GPU error: ${message}`)));
+    const message = gpuError?.message ?? "Unknown uncaptured GPU error";
+    overlay.show(
+      buildFaultPresentation(getStage(), runtime, new Error(`Uncaptured GPU error: ${message}`))
+    );
   });
 }
 
@@ -440,7 +476,7 @@ async function loadConfig(url: string, mode: FlybyMode): Promise<Config> {
 
   const config: Config = {
     mode,
-    fieldFile: 'airport.fld',
+    fieldFile: "airport.fld",
     aircraft: [],
     altitude: 120.0,
     smokeType: ARS_SOLIDSMOKE,
@@ -448,29 +484,29 @@ async function loadConfig(url: string, mode: FlybyMode): Promise<Config> {
 
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line || line[0] === '#') continue;
+    if (!line || line[0] === "#") continue;
     const tok = line.split(/\s+/);
     const cmd = tok[0].toUpperCase();
 
-    if (cmd === 'AIRCRAFT') {
+    if (cmd === "AIRCRAFT") {
       config.aircraft.push(tok[1]);
-    } else if (cmd === 'FIELD') {
+    } else if (cmd === "FIELD") {
       config.fieldFile = tok[1];
-    } else if (cmd === 'ALTITUDE') {
+    } else if (cmd === "ALTITUDE") {
       config.altitude = parseFloat(tok[1]);
-    } else if (cmd === 'SOLIDSMOKE') {
+    } else if (cmd === "SOLIDSMOKE") {
       config.smokeType = 8;
-    } else if (cmd === 'WIRESMOKE') {
+    } else if (cmd === "WIRESMOKE") {
       config.smokeType = 2;
-    } else if (cmd === 'TRAILSMOKE') {
+    } else if (cmd === "TRAILSMOKE") {
       config.smokeType = 4;
-    } else if (cmd === 'RIBBONSMOKE') {
+    } else if (cmd === "RIBBONSMOKE") {
       config.smokeType = 1;
     }
   }
 
-  if (mode === 'flyby2_s') {
-    config.fieldFile = 'airport.fld';
+  if (mode === "flyby2_s") {
+    config.fieldFile = "airport.fld";
     config.aircraft = [...SCREENSAVER_AIRCRAFT];
     config.altitude = 120.0;
     config.smokeType = ARS_RIBBONSMOKE;
@@ -481,19 +517,19 @@ async function loadConfig(url: string, mode: FlybyMode): Promise<Config> {
 
 async function main(): Promise<void> {
   const runtime = getRuntimeOptions();
-  const app = document.getElementById('app')!;
-  const shell = document.createElement('div');
-  const rendererStage = document.createElement('section');
-  const rendererViewport = document.createElement('div');
-  const canvas = document.createElement('canvas');
-  canvas.className = 'flight-canvas';
-  const debugOverlay = document.createElement('div');
-  const helpOverlay = document.createElement('div');
-  shell.className = 'app-shell';
-  rendererStage.className = 'flight-stage';
-  rendererViewport.className = 'flight-stage__viewport';
-  debugOverlay.className = 'debug-console';
-  helpOverlay.className = 'help-banner';
+  const app = document.getElementById("app")!;
+  const shell = document.createElement("div");
+  const rendererStage = document.createElement("section");
+  const rendererViewport = document.createElement("div");
+  const canvas = document.createElement("canvas");
+  canvas.className = "flight-canvas";
+  const debugOverlay = document.createElement("div");
+  const helpOverlay = document.createElement("div");
+  shell.className = "app-shell";
+  rendererStage.className = "flight-stage";
+  rendererViewport.className = "flight-stage__viewport";
+  debugOverlay.className = "debug-console";
+  helpOverlay.className = "help-banner";
   rendererViewport.appendChild(canvas);
   rendererViewport.appendChild(helpOverlay);
   rendererStage.appendChild(rendererViewport);
@@ -501,20 +537,24 @@ async function main(): Promise<void> {
   shell.appendChild(debugOverlay);
   app.appendChild(shell);
   const faultOverlay = createFaultOverlay(shell, rendererViewport, runtime);
-  let bootStage = 'Checking browser WebGPU support';
+  let bootStage = "Checking browser WebGPU support";
   attachGlobalErrorHandlers(faultOverlay, runtime, () => bootStage);
 
   try {
     if (!navigator.gpu) {
-      faultOverlay.show(buildFaultPresentation(
-        bootStage,
-        runtime,
-        new Error('WebGPU is not supported in this browser. Please use Chrome or Edge with WebGPU enabled.'),
-      ));
+      faultOverlay.show(
+        buildFaultPresentation(
+          bootStage,
+          runtime,
+          new Error(
+            "WebGPU is not supported in this browser. Please use Chrome or Edge with WebGPU enabled."
+          )
+        )
+      );
       return;
     }
 
-    bootStage = 'Initializing WebGPU renderer';
+    bootStage = "Initializing WebGPU renderer";
     const renderer = new Renderer();
     await renderer.init(canvas);
     attachRendererErrorHandlers(renderer, faultOverlay, runtime, () => bootStage);
@@ -528,22 +568,29 @@ async function main(): Promise<void> {
     onResize();
     new ResizeObserver(onResize).observe(rendererViewport);
 
-    const dataBase = '/data/';
-    bootStage = 'Loading flight configuration';
-    const config = await loadConfig(dataBase + 'flyby.inf', runtime.mode);
+    const dataBase = "/data/";
+    bootStage = "Loading flight configuration";
+    const config = await loadConfig(dataBase + "flyby.inf", runtime.mode);
     config.fieldFile = resolveFieldFileForMap(config.fieldFile, runtime.mapVariant);
-    config.smokeType = runtime.smokeOverride ?? scenarioSmokeType(runtime.scenario) ?? config.smokeType;
+    config.smokeType =
+      runtime.smokeOverride ?? scenarioSmokeType(runtime.scenario) ?? config.smokeType;
 
-    bootStage = 'Loading field data';
-    console.log('Loading field...');
-    const field = enhanceFieldForMap(await loadField(dataBase + config.fieldFile), config.fieldFile, runtime.mapVariant);
+    bootStage = "Loading field data";
+    console.log("Loading field...");
+    const field = enhanceFieldForMap(
+      await loadField(dataBase + config.fieldFile),
+      config.fieldFile,
+      runtime.mapVariant
+    );
     const environment = resolveMapEnvironment(runtime.mapVariant, field);
-    console.log(`Field loaded: ${field.srf.length} SRF, ${field.pc2.length} PC2, ${field.ter.length} TER`);
+    console.log(
+      `Field loaded: ${field.srf.length} SRF, ${field.pc2.length} PC2, ${field.ter.length} TER`
+    );
 
-    bootStage = 'Building field GPU buffers';
+    bootStage = "Building field GPU buffers";
     const gpuField: GpuField = renderer.buildFieldGpuBuffer(field, environment.keyLight.direction);
 
-    bootStage = 'Loading aircraft models';
+    bootStage = "Loading aircraft models";
     console.log(`Loading ${config.aircraft.length} aircraft...`);
     const aircraft: SrfModel[] = [];
     const aircraftLabels: string[] = [];
@@ -566,8 +613,8 @@ async function main(): Promise<void> {
 
     console.log(`${aircraft.length} aircraft loaded. Starting animation...`);
 
-    bootStage = 'Starting runtime';
-    if (runtime.appMode !== 'scriptedFlyby') {
+    bootStage = "Starting runtime";
+    if (runtime.appMode !== "scriptedFlyby") {
       const game = new GameRuntime({
         appMode: runtime.appMode,
         renderer,
@@ -621,14 +668,14 @@ async function main(): Promise<void> {
         targetScreen: null,
         projectionMag: 0,
         cameraPos: { x: 0, y: 0, z: 0 },
-        objectRegion: '-',
-        eyeRegion: '-',
-        objectElevation: '-',
-        objectCollision: '-',
+        objectRegion: "-",
+        eyeRegion: "-",
+        objectElevation: "-",
+        objectCollision: "-",
         mode: config.mode,
-        seed: runtime.seed === null ? '-' : String(runtime.seed),
-        scenario: runtime.scenario ?? '-',
-        referenceScreens: '-',
+        seed: runtime.seed === null ? "-" : String(runtime.seed),
+        scenario: runtime.scenario ?? "-",
+        referenceScreens: "-",
       },
       cameraPan: {
         heading: 0,
@@ -639,8 +686,8 @@ async function main(): Promise<void> {
         lastX: 0,
         lastY: 0,
       },
-      cameraView: 'director',
-      topDownMode: 'follow',
+      cameraView: "director",
+      topDownMode: "follow",
       topDownAnchor: null,
 
       // Maneuver state

@@ -77,11 +77,11 @@ with different positions — parse once, share the SrfModel.
 ### API
 
 ```typescript
-async function loadField(url: string): Promise<Field>
-  // 1. Fetch FLD file
-  // 2. Parse structure
-  // 3. For each FIL reference, fetch + parse sub-file
-  // 4. Return complete Field
+async function loadField(url: string): Promise<Field>;
+// 1. Fetch FLD file
+// 2. Parse structure
+// 3. For each FIL reference, fetch + parse sub-file
+// 4. Return complete Field
 ```
 
 ### Actual Data (AIRPORT.FLD)
@@ -154,7 +154,7 @@ ENDPICT                  — End picture
 ### API
 
 ```typescript
-async function loadPc2(url: string): Promise<Pc2>
+async function loadPc2(url: string): Promise<Pc2>;
 ```
 
 ### Actual Data (RUNWAY.PC2)
@@ -203,6 +203,7 @@ END
 ```
 
 BLO line fields:
+
 - height: float (block height above base)
 - R/L: right or left visibility flag for side faces
 - ON/OFF r g b: side color with visibility toggle (repeated for each visible side)
@@ -224,7 +225,7 @@ BLO line fields:
 ### API
 
 ```typescript
-async function loadTer(url: string): Promise<Terrain>
+async function loadTer(url: string): Promise<Terrain>;
 ```
 
 ### Actual Data (SAMPLE.TER)

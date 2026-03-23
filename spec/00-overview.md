@@ -12,13 +12,13 @@ library ("Aurora").
 
 ## 2. Decisions
 
-| Aspect | Decision |
-|--------|----------|
-| Shading | Flat per-face (original style). Smooth normals only on `R`-flagged vertices |
-| Display | Fullscreen responsive. Adapt FOV to match original 640x480 field of view |
+| Aspect        | Decision                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| Shading       | Flat per-face (original style). Smooth normals only on `R`-flagged vertices                       |
+| Display       | Fullscreen responsive. Adapt FOV to match original 640x480 field of view                          |
 | Default smoke | Source-faithful defaults: engine default is solid smoke, bundled `flyby.inf` selects ribbon smoke |
-| Framework | None — vanilla TypeScript + WebGPU |
-| Asset loading | Fetch from `public/data/` at runtime |
+| Framework     | None — vanilla TypeScript + WebGPU                                                                |
+| Asset loading | Fetch from `public/data/` at runtime                                                              |
 
 ## 2.1 Current Port Status
 
@@ -59,38 +59,38 @@ Current checked-out status, based on code and runtime capture:
 
 ## 3. Source Files to Port
 
-| Source (C) | Target (TypeScript) | Port Strategy |
-|------------|---------------------|---------------|
-| `impulse.h` (structs) | `src/types.ts` | Direct struct-to-interface translation |
-| `icalc.c` + `impulse.h` macros | `src/math.ts` | Port all vector/angle/rotation functions |
-| `imodel.c` BiLoadSrfMainLoop | `src/srf-parser.ts` | Port text parser, normal computation, twist constraint |
-| `ifield.c` BiLoadFld | `src/fld-parser.ts` | Port scene parser, file loading via fetch |
-| PC2 loader (i2dpict.c) | `src/pc2-parser.ts` | Port 2D picture parser |
-| TER loader (iterrain.c) | `src/ter-parser.ts` | Port terrain mesh parser |
-| `ASMOKE.C` | `src/smoke.ts` | Port smoke class/instance/draw logic |
-| `FLYBY.C` | `src/flight.ts` + `src/main.ts` | Port maneuver logic, camera, main loop |
-| OpenGL backend (iopengl.c) | `src/renderer.ts` + `src/shader.wgsl.ts` | Rewrite for WebGPU |
-| Win32 input (idevice.c) | `src/input.ts` | Rewrite for DOM keyboard events |
+| Source (C)                     | Target (TypeScript)                      | Port Strategy                                          |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------ |
+| `impulse.h` (structs)          | `src/types.ts`                           | Direct struct-to-interface translation                 |
+| `icalc.c` + `impulse.h` macros | `src/math.ts`                            | Port all vector/angle/rotation functions               |
+| `imodel.c` BiLoadSrfMainLoop   | `src/srf-parser.ts`                      | Port text parser, normal computation, twist constraint |
+| `ifield.c` BiLoadFld           | `src/fld-parser.ts`                      | Port scene parser, file loading via fetch              |
+| PC2 loader (i2dpict.c)         | `src/pc2-parser.ts`                      | Port 2D picture parser                                 |
+| TER loader (iterrain.c)        | `src/ter-parser.ts`                      | Port terrain mesh parser                               |
+| `ASMOKE.C`                     | `src/smoke.ts`                           | Port smoke class/instance/draw logic                   |
+| `FLYBY.C`                      | `src/flight.ts` + `src/main.ts`          | Port maneuver logic, camera, main loop                 |
+| OpenGL backend (iopengl.c)     | `src/renderer.ts` + `src/shader.wgsl.ts` | Rewrite for WebGPU                                     |
+| Win32 input (idevice.c)        | `src/input.ts`                           | Rewrite for DOM keyboard events                        |
 
 ## 4. Source Files to Create
 
-| File | Est. Lines | Purpose |
-|------|-----------|---------|
-| `src/types.ts` | 200 | All data structures |
-| `src/math.ts` | 400 | Vector, angle, rotation, projection math |
-| `src/srf-parser.ts` | 300 | SRF 3D model parser |
-| `src/fld-parser.ts` | 200 | FLD scene parser |
-| `src/pc2-parser.ts` | 100 | PC2 2D picture parser |
-| `src/ter-parser.ts` | 100 | TER terrain parser |
-| `src/smoke.ts` | 350 | Smoke trail system |
-| `src/flight.ts` | 350 | Flight maneuvers + camera |
-| `src/renderer.ts` | 500 | WebGPU pipeline + draw calls |
-| `src/shader.wgsl.ts` | 300 | WGSL shaders embedded in TypeScript |
-| `src/input.ts` | 50 | Keyboard handling |
-| `src/main.ts` | 200 | Entry point, asset loading, loop |
-| `src/style.css` | 50 | Fullscreen canvas styles |
-| `spec/` | — | This documentation |
-| **Total** | **~3000** | |
+| File                 | Est. Lines | Purpose                                  |
+| -------------------- | ---------- | ---------------------------------------- |
+| `src/types.ts`       | 200        | All data structures                      |
+| `src/math.ts`        | 400        | Vector, angle, rotation, projection math |
+| `src/srf-parser.ts`  | 300        | SRF 3D model parser                      |
+| `src/fld-parser.ts`  | 200        | FLD scene parser                         |
+| `src/pc2-parser.ts`  | 100        | PC2 2D picture parser                    |
+| `src/ter-parser.ts`  | 100        | TER terrain parser                       |
+| `src/smoke.ts`       | 350        | Smoke trail system                       |
+| `src/flight.ts`      | 350        | Flight maneuvers + camera                |
+| `src/renderer.ts`    | 500        | WebGPU pipeline + draw calls             |
+| `src/shader.wgsl.ts` | 300        | WGSL shaders embedded in TypeScript      |
+| `src/input.ts`       | 50         | Keyboard handling                        |
+| `src/main.ts`        | 200        | Entry point, asset loading, loop         |
+| `src/style.css`      | 50         | Fullscreen canvas styles                 |
+| `spec/`              | —          | This documentation                       |
+| **Total**            | **~3000**  |                                          |
 
 ## 5. Data Assets
 
@@ -152,6 +152,7 @@ main.ts (entry)
 ## 8. Verification
 
 After each implementation step, run `bun run dev` and visually verify in browser:
+
 - Step 4: Aircraft model renders with correct colors and back-face culling
 - Step 6: Aircraft flies in loops/rolls/turns, camera tracks it
 - Step 8: Airport runway markings, hangars, tower visible

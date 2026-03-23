@@ -27,9 +27,12 @@ interface Attitude {
 
 // BITRIGON (impulse.h:120-123) — pre-computed trig cache
 interface TrigCache {
-  sinh: number; cosh: number;
-  sinp: number; cosp: number;
-  sinb: number; cosb: number;
+  sinh: number;
+  cosh: number;
+  sinp: number;
+  cosp: number;
+  sinb: number;
+  cosb: number;
 }
 
 // BIPOSATT / BIPNTANG (impulse.h:95-100)
@@ -84,14 +87,14 @@ FLD/PC2/TER colors are direct 0-255 RGB values.
 ```typescript
 // BIPROJ (impulse.h:152-157)
 interface Projection {
-  lx: number;    // screen width (long)
-  ly: number;    // screen height (long)
-  cx: number;    // center x (long)
-  cy: number;    // center y (long)
-  magx: number;  // x magnification (real)
-  magy: number;  // y magnification (real)
+  lx: number; // screen width (long)
+  ly: number; // screen height (long)
+  cx: number; // center x (long)
+  cy: number; // center y (long)
+  magx: number; // x magnification (real)
+  magy: number; // y magnification (real)
   nearz: number; // near clip distance (real)
-  farz: number;  // far clip distance (real)
+  farz: number; // far clip distance (real)
 }
 ```
 
@@ -100,8 +103,8 @@ interface Projection {
 ```typescript
 // BISRFVERTEX (impulse.h:202-205)
 interface SrfVertex {
-  pos: Vec3;      // position
-  normal: Vec3;   // smoothed vertex normal (computed post-load)
+  pos: Vec3; // position
+  normal: Vec3; // smoothed vertex normal (computed post-load)
   smoothFlag: number; // r: BI_ON if vertex participates in smooth shading
 }
 
@@ -109,19 +112,19 @@ interface SrfVertex {
 interface SrfPolygon {
   backFaceRemove: number; // BI_ON or BI_OFF
   color: Color;
-  normal: Vec3;     // face normal
-  center: Vec3;     // face center point (from NOR line)
+  normal: Vec3; // face normal
+  center: Vec3; // face center point (from NOR line)
   vertexIds: number[]; // indices into vertex array
-  bright: number;   // BI_ON = unlit
-  nVt: number;      // vertex count
+  bright: number; // BI_ON = unlit
+  nVt: number; // vertex count
 }
 
 // BISRF / BISRFMODEL (impulse.h:216-223)
 interface SrfModel {
-  bbox: Vec3[];       // 8-corner bounding box
-  nv: number;         // vertex count
+  bbox: Vec3[]; // 8-corner bounding box
+  nv: number; // vertex count
   vertices: SrfVertex[];
-  np: number;         // polygon count
+  np: number; // polygon count
   polygons: SrfPolygon[];
 }
 ```
@@ -194,9 +197,9 @@ interface Pc2 {
 ```typescript
 // BITERRBLOCK (impulse.h:228-236)
 interface TerrainBlock {
-  y: number;       // height
-  col: Color[];    // [top color, side color]
-  vis: number[];   // visibility flags
+  y: number; // height
+  col: Color[]; // [top color, side color]
+  vis: number[]; // visibility flags
 }
 
 // BITER (impulse.h:238-249)
@@ -206,7 +209,7 @@ interface Terrain {
   xWid: number;
   zWid: number;
   blocks: TerrainBlock[];
-  sdCol: Color[];  // side colors [4]
+  sdCol: Color[]; // side colors [4]
 }
 ```
 
@@ -215,50 +218,50 @@ interface Terrain {
 ```typescript
 // ARSMOKEATTR (ASMOKE.H:2-8)
 interface SmokeAttr {
-  t0: number;      // life start (sec)
-  t1: number;      // life end (sec)
-  iniw: number;    // initial width
-  maxw: number;    // maximum width
-  dw: number;      // width growth per second
-  inic: Color;     // initial color
-  endc: Color;     // end color
-  tc: number;      // color transition time (sec)
+  t0: number; // life start (sec)
+  t1: number; // life end (sec)
+  iniw: number; // initial width
+  maxw: number; // maximum width
+  dw: number; // width growth per second
+  inic: Color; // initial color
+  endc: Color; // end color
+  tc: number; // color transition time (sec)
 }
 
 // ARSMOKENODE (ASMOKE.H:13-15)
 interface SmokeNode {
-  axs: Axis;       // position + attitude at this point
-  left: Vec3;      // left vector (rotated X)
-  up: Vec3;        // up vector (rotated Y)
-  t: number;       // timestamp
+  axs: Axis; // position + attitude at this point
+  left: Vec3; // left vector (rotated X)
+  up: Vec3; // up vector (rotated Y)
+  t: number; // timestamp
 }
 
 // ARSMOKEINST (ASMOKE.H:19-26)
 interface SmokeInst {
-  nMax: number;           // max nodes
-  nDel: number;           // delete count on overflow
-  nPth: number;           // active node count
-  nTip: number;           // tip count
-  tip: Int32Array;        // tip indices [MAX_TIP * 2]
-  pth: SmokeNode[];       // node array
+  nMax: number; // max nodes
+  nDel: number; // delete count on overflow
+  nPth: number; // active node count
+  nTip: number; // tip count
+  tip: Int32Array; // tip indices [MAX_TIP * 2]
+  pth: SmokeNode[]; // node array
 }
 
 // ARSMOKECLASS (ASMOKE.H:35-43)
 interface SmokeClass {
-  stp: number[];    // LOD steps [3]
-  bbx: Vec3[];      // bounding boxes [3]
-  sw: number;       // smoke type flags (bitmask)
-  rbn: SmokeAttr;   // ribbon
-  wir: SmokeAttr;   // wire
-  trl: SmokeAttr;   // trail
-  sld: SmokeAttr;   // solid
+  stp: number[]; // LOD steps [3]
+  bbx: Vec3[]; // bounding boxes [3]
+  sw: number; // smoke type flags (bitmask)
+  rbn: SmokeAttr; // ribbon
+  wir: SmokeAttr; // wire
+  trl: SmokeAttr; // trail
+  sld: SmokeAttr; // solid
 }
 
 // Smoke type flags (ASMOKE.H:29-33)
 const ARS_RIBBONSMOKE = 1;
-const ARS_WIRESMOKE   = 2;
-const ARS_TRAILSMOKE  = 4;
-const ARS_SOLIDSMOKE  = 8;
+const ARS_WIRESMOKE = 2;
+const ARS_TRAILSMOKE = 4;
+const ARS_SOLIDSMOKE = 8;
 ```
 
 ## Constants
@@ -280,14 +283,14 @@ const BiVecZ: Vec3 = { x: 0, y: 0, z: 1 };
 const BiOrgPA: PosAtt = { p: BiOrgP, a: { h: 0, p: 0, b: 0 } };
 
 // Named colors (impulse.h:790-797)
-const BiBlack:   Color = { r: 0, g: 0, b: 0 };
-const BiBlue:    Color = { r: 0, g: 0, b: 1 };
-const BiRed:     Color = { r: 1, g: 0, b: 0 };
-const BiGreen:   Color = { r: 0, g: 1, b: 0 };
-const BiCyan:    Color = { r: 0, g: 1, b: 1 };
-const BiYellow:  Color = { r: 1, g: 1, b: 0 };
+const BiBlack: Color = { r: 0, g: 0, b: 0 };
+const BiBlue: Color = { r: 0, g: 0, b: 1 };
+const BiRed: Color = { r: 1, g: 0, b: 0 };
+const BiGreen: Color = { r: 0, g: 1, b: 0 };
+const BiCyan: Color = { r: 0, g: 1, b: 1 };
+const BiYellow: Color = { r: 1, g: 1, b: 0 };
 const BiMagenta: Color = { r: 1, g: 0, b: 1 };
-const BiWhite:   Color = { r: 1, g: 1, b: 1 };
+const BiWhite: Color = { r: 1, g: 1, b: 1 };
 ```
 
 ## Render Vertex (GPU format)
@@ -295,8 +298,8 @@ const BiWhite:   Color = { r: 1, g: 1, b: 1 };
 ```typescript
 // Used in vertex buffers sent to WebGPU
 interface RenderVertex {
-  position: [number, number, number];  // x, y, z
-  normal: [number, number, number];    // nx, ny, nz
+  position: [number, number, number]; // x, y, z
+  normal: [number, number, number]; // nx, ny, nz
   color: [number, number, number, number]; // r, g, b, a
   bright: number; // 0 or 1
 }

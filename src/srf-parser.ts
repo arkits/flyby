@@ -1,12 +1,17 @@
 // FLYBY2 — SRF 3D Model Parser
 // Ported from imodel.c (BiLoadSrfMainLoop)
 
-import type { SrfModel, SrfVertex, SrfPolygon, Vec3, Color } from './types';
-import { BI_ON, BI_OFF, YSEPS, BiOrgP } from './types';
+import type { SrfModel, SrfVertex, SrfPolygon, Vec3, Color } from "./types";
+import { BI_ON, BI_OFF, YSEPS, BiOrgP } from "./types";
 import {
-  vec3, normalize, averageNormalVector,
-  innerPoint, colorFromSRF15, twist3, BITWIST_RIGHT,
-} from './math';
+  vec3,
+  normalize,
+  averageNormalVector,
+  innerPoint,
+  colorFromSRF15,
+  twist3,
+  BITWIST_RIGHT,
+} from "./math";
 
 export async function loadSrf(url: string): Promise<SrfModel> {
   const resp = await fetch(url);
@@ -22,7 +27,7 @@ export function parseSrfText(text: string): SrfModel {
   function nextLine(): string | null {
     while (lineIdx < lines.length) {
       const l = lines[lineIdx++].trim();
-      if (l.length > 0 && l[0] !== '#') return l;
+      if (l.length > 0 && l[0] !== "#") return l;
     }
     return null;
   }
@@ -33,8 +38,8 @@ export function parseSrfText(text: string): SrfModel {
 
   // Read header
   const header = nextLine();
-  if (!header || header.toUpperCase() !== 'SURF') {
-    throw new Error('Invalid SRF: missing Surf header');
+  if (!header || header.toUpperCase() !== "SURF") {
+    throw new Error("Invalid SRF: missing Surf header");
   }
 
   // Parse vertices
@@ -48,14 +53,14 @@ export function parseSrfText(text: string): SrfModel {
     const tok = tokenize(line);
     const cmd = tok[0].toUpperCase();
 
-    if (cmd === 'V') {
+    if (cmd === "V") {
       // Vertex: V x y z [R]
       const x = parseFloat(tok[1]);
       const y = parseFloat(tok[2]);
       const z = parseFloat(tok[3]);
-      const smooth = (tok.length >= 5 && tok[4].toUpperCase() === 'R') ? BI_ON : BI_OFF;
+      const smooth = tok.length >= 5 && tok[4].toUpperCase() === "R" ? BI_ON : BI_OFF;
       rawVerts.push({ pos: vec3(x, y, z), smoothFlag: smooth });
-    } else if (cmd === 'F') {
+    } else if (cmd === "F") {
       // Face block
       let col: Color = { r: 0, g: 0, b: 0 };
       let nom: Vec3 = vec3(0, 0, 0);
@@ -69,10 +74,10 @@ export function parseSrfText(text: string): SrfModel {
         const ftok = tokenize(fline);
         const fcmd = ftok[0].toUpperCase();
 
-        if (fcmd === 'C') {
+        if (fcmd === "C") {
           // Color: C col15
           col = colorFromSRF15(parseInt(ftok[1]));
-        } else if (fcmd === 'N') {
+        } else if (fcmd === "N") {
           // Normal: N cx cy cz nx ny nz
           cen = vec3(parseFloat(ftok[1]), parseFloat(ftok[2]), parseFloat(ftok[3]));
           nom = vec3(parseFloat(ftok[4]), parseFloat(ftok[5]), parseFloat(ftok[6]));
@@ -80,15 +85,15 @@ export function parseSrfText(text: string): SrfModel {
             normalize(nom, nom);
             bfr = BI_ON;
           }
-        } else if (fcmd === 'V') {
+        } else if (fcmd === "V") {
           // Vertex indices: V id id id ...
           for (let i = 1; i < ftok.length; i++) {
             vtxIds.push(parseInt(ftok[i]));
           }
-        } else if (fcmd === 'B') {
+        } else if (fcmd === "B") {
           // Bright (unlit)
           bri = BI_ON;
-        } else if (fcmd === 'E') {
+        } else if (fcmd === "E") {
           // End face
           // Remove duplicate last vertex if same as first
           let nVt = vtxIds.length;
@@ -107,14 +112,14 @@ export function parseSrfText(text: string): SrfModel {
           break;
         }
       }
-    } else if (cmd === 'END') {
+    } else if (cmd === "END") {
       break;
     }
   }
 
   // Build vertex array
   const nv = rawVerts.length;
-  const vertices: SrfVertex[] = rawVerts.map(rv => ({
+  const vertices: SrfVertex[] = rawVerts.map((rv) => ({
     pos: rv.pos,
     normal: { ...BiOrgP },
     smoothFlag: rv.smoothFlag,
@@ -134,7 +139,7 @@ export function parseSrfText(text: string): SrfModel {
 function computeFaceNormals(polygons: SrfPolygon[], vertices: SrfVertex[]): void {
   for (const plg of polygons) {
     if (plg.backFaceRemove === BI_OFF) {
-      const tmp: Vec3[] = plg.vertexIds.map(id => vertices[id].pos);
+      const tmp: Vec3[] = plg.vertexIds.map((id) => vertices[id].pos);
       const nom = vec3(0, 0, 0);
       if (averageNormalVector(nom, tmp.length, tmp)) {
         normalize(nom, nom);
@@ -151,9 +156,7 @@ function computeVertexNormals(polygons: SrfPolygon[], vertices: SrfVertex[]): vo
     let n = 0;
 
     for (const plg of polygons) {
-      if (plg.bright !== BI_ON &&
-          plg.backFaceRemove === BI_ON &&
-          plg.vertexIds.includes(i)) {
+      if (plg.bright !== BI_ON && plg.backFaceRemove === BI_ON && plg.vertexIds.includes(i)) {
         const pNom = { ...plg.normal };
         let found = false;
         for (let j = 0; j < n; j++) {
@@ -171,7 +174,9 @@ function computeVertexNormals(polygons: SrfPolygon[], vertices: SrfVertex[]): vo
 
     if (n > 0) {
       for (const ln of lst) {
-        nom.x += ln.x; nom.y += ln.y; nom.z += ln.z;
+        nom.x += ln.x;
+        nom.y += ln.y;
+        nom.z += ln.z;
       }
       normalize(nom, nom);
     }
@@ -182,7 +187,7 @@ function computeVertexNormals(polygons: SrfPolygon[], vertices: SrfVertex[]): vo
 function constrainTwist(polygons: SrfPolygon[], vertices: SrfVertex[]): void {
   for (const plg of polygons) {
     if (plg.backFaceRemove !== BI_ON) continue;
-    const tmp: Vec3[] = plg.vertexIds.map(id => vertices[id].pos);
+    const tmp: Vec3[] = plg.vertexIds.map((id) => vertices[id].pos);
     if (twist3(plg.nVt, tmp, plg.normal) === BITWIST_RIGHT) {
       // Reverse winding
       plg.vertexIds.reverse();
@@ -204,9 +209,13 @@ function buildBoundingBox(vertices: SrfVertex[]): Vec3[] {
     if (v.z > max.z) max.z = v.z;
   }
   return [
-    vec3(min.x, min.y, min.z), vec3(max.x, min.y, min.z),
-    vec3(min.x, max.y, min.z), vec3(max.x, max.y, min.z),
-    vec3(min.x, min.y, max.z), vec3(max.x, min.y, max.z),
-    vec3(min.x, max.y, max.z), vec3(max.x, max.y, max.z),
+    vec3(min.x, min.y, min.z),
+    vec3(max.x, min.y, min.z),
+    vec3(min.x, max.y, min.z),
+    vec3(max.x, max.y, min.z),
+    vec3(min.x, min.y, max.z),
+    vec3(max.x, min.y, max.z),
+    vec3(min.x, max.y, max.z),
+    vec3(max.x, max.y, max.z),
   ];
 }

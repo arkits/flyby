@@ -55,11 +55,13 @@ FlyByMain (infinite loop)
 All maneuvers use the same pattern: a sequence of `FlyByAhead`, `FlyByPitch`, `FlyByBank`, `FlyByTurn`.
 
 ### FlyByStraight (FLYBY.C:300-304)
+
 ```
 Ahead(1000)
 ```
 
 ### FlyByRoll (FLYBY.C:306-312)
+
 ```
 Ahead(300)
 Bank(65536, 1)   // Full 360° barrel roll
@@ -67,6 +69,7 @@ Ahead(300)
 ```
 
 ### FlyByLoop (FLYBY.C:314-320)
+
 ```
 Ahead(500)
 Pitch(65536, 1)  // Full 360° loop
@@ -74,6 +77,7 @@ Ahead(500)
 ```
 
 ### FlyByClimb (FLYBY.C:322-328)
+
 ```
 Ahead(450)
 Pitch(12800, 1)  // ~70° pitch up
@@ -81,6 +85,7 @@ Ahead(500)
 ```
 
 ### FlyByEight (FLYBY.C:330-344)
+
 ```
 Ahead(400)
 Pitch(0x4000, 1)    // 90° pitch up
@@ -96,6 +101,7 @@ Ahead(400)
 ```
 
 ### FlyBy360 (FLYBY.C:346-354)
+
 ```
 Ahead(450)
 Bank(12800, 1)      // ~70° bank
@@ -107,20 +113,22 @@ Ahead(500)
 ## Primitive Movement Functions
 
 ### FlyByAhead (FLYBY.C:358-370)
+
 ```typescript
 function flyByAhead(show, obj, eye, dist: number): void {
   while (dist > 0) {
     drawScreen(show, obj, eye);
     const t = passedTime();
     currentTime += t;
-    const vel = t * 100.0;  // 100 units/sec
-    proceed(obj, vel);       // Move forward in local Z
+    const vel = t * 100.0; // 100 units/sec
+    proceed(obj, vel); // Move forward in local Z
     dist -= vel;
   }
 }
 ```
 
 ### FlyByPitch (FLYBY.C:372-391)
+
 ```typescript
 function flyByPitch(show, obj, eye, ctr: number, sgn: number): void {
   beginAppendSmokeNode(smokeInst);
@@ -131,8 +139,8 @@ function flyByPitch(show, obj, eye, ctr: number, sgn: number): void {
     currentTime += t;
     const vel = t * 100.0;
     proceed(obj, vel);
-    pitchUp(obj.a, obj.a, sgn * (t * 8192), 0);  // Rate: 8192 units/sec
-    ctr -= (t * 8192);
+    pitchUp(obj.a, obj.a, sgn * (t * 8192), 0); // Rate: 8192 units/sec
+    ctr -= t * 8192;
     appendSmokeNode(smokeInst, obj, currentTime);
     appendSmokeNode(vaporInst, obj, currentTime);
   }
@@ -142,17 +150,18 @@ function flyByPitch(show, obj, eye, ctr: number, sgn: number): void {
 ```
 
 ### FlyByBank (FLYBY.C:393-409)
+
 ```typescript
 function flyByBank(show, obj, eye, ctr: number, sgn: number): void {
-  beginAppendSmokeNode(vaporInst);  // Vapor only during bank
+  beginAppendSmokeNode(vaporInst); // Vapor only during bank
   while (ctr > 0) {
     drawScreen(show, obj, eye);
     const t = passedTime();
     currentTime += t;
     const vel = t * 100.0;
     proceed(obj, vel);
-    obj.a.b += sgn * (t * 32768);   // Rate: 32768 units/sec (faster than pitch)
-    ctr -= (t * 32768);
+    obj.a.b += sgn * (t * 32768); // Rate: 32768 units/sec (faster than pitch)
+    ctr -= t * 32768;
     appendSmokeNode(vaporInst, obj, currentTime);
   }
   endAppendSmokeNode(vaporInst);
@@ -160,20 +169,21 @@ function flyByBank(show, obj, eye, ctr: number, sgn: number): void {
 ```
 
 ### FlyByTurn (FLYBY.C:411-430)
+
 ```typescript
 function flyByTurn(show, obj, eye, ctr: number, sgn: number): void {
   beginAppendSmokeNode(smokeInst);
   beginAppendSmokeNode(vaporInst);
   while (ctr > 0) {
-    appendSmokeNode(smokeInst, obj, currentTime);  // Append BEFORE draw (unlike others)
+    appendSmokeNode(smokeInst, obj, currentTime); // Append BEFORE draw (unlike others)
     appendSmokeNode(vaporInst, obj, currentTime);
     drawScreen(show, obj, eye);
     const t = passedTime();
     currentTime += t;
     const vel = t * 100.0;
     proceed(obj, vel);
-    obj.a.h += sgn * (t * 8192);   // Rate: 8192 units/sec
-    ctr -= (t * 8192);
+    obj.a.h += sgn * (t * 8192); // Rate: 8192 units/sec
+    ctr -= t * 8192;
   }
   endAppendSmokeNode(smokeInst);
   endAppendSmokeNode(vaporInst);
@@ -181,11 +191,12 @@ function flyByTurn(show, obj, eye, ctr: number, sgn: number): void {
 ```
 
 ### Proceed (FLYBY.C:555-561)
+
 ```typescript
 function proceed(obj: PosAtt, dist: number): void {
   // Move forward in local Z direction
   let vec = { x: 0, y: 0, z: dist };
-  rotLtoG(vec, vec, obj.a);  // Rotate local forward vector to global
+  rotLtoG(vec, vec, obj.a); // Rotate local forward vector to global
   obj.p.x += vec.x;
   obj.p.y += vec.y;
   obj.p.z += vec.z;
@@ -198,7 +209,7 @@ function proceed(obj: PosAtt, dist: number): void {
 function updateCamera(eye: PosAtt, obj: PosAtt): void {
   // Camera always looks at aircraft
   const vec = subV3(obj.p, eye.p);
-  vectorToHeadPitch(eye.a, vec);  // Derive heading/pitch from direction to aircraft
+  vectorToHeadPitch(eye.a, vec); // Derive heading/pitch from direction to aircraft
   // eye.a.b remains unchanged (no roll on camera)
 }
 ```
@@ -222,7 +233,7 @@ function passedTime(): number {
   let dt = (now - lastTime) / 1000.0;
   while (dt < 0.02) {
     // In original: busy-wait. In web: we use requestAnimationFrame timing instead
-    dt = 0.02;  // Clamp
+    dt = 0.02; // Clamp
   }
   lastTime = now;
   return dt * timeScale;
@@ -240,14 +251,16 @@ displays present extra in-between redraws.
 // FLYBY.C:463-476
 function handleInput(key: string): void {
   switch (key) {
-    case 'x': case 'X':
+    case "x":
+    case "X":
       quitFlag = true;
       break;
-    case 't': case 'T':
+    case "t":
+    case "T":
       // Original: render to TIFF file. Skip in web.
       break;
     default:
-      helpCount = 30;  // Show help text for 30 frames
+      helpCount = 30; // Show help text for 30 frames
       break;
   }
 }

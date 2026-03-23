@@ -2,42 +2,57 @@
 // Ported from icalc.c + impulse.h macros (Blue Impulse 3D engine)
 
 import type {
-  Vec3, Vec2, Attitude, TrigCache, PosAtt, Axis, Color,
-  ScreenPoint, Projection,
-} from './types';
+  Vec3,
+  Vec2,
+  Attitude,
+  TrigCache,
+  PosAtt,
+  Axis,
+  Color,
+  ScreenPoint,
+  Projection,
+} from "./types";
 
-import { YSPI, YSEPS } from './types';
+import { YSPI, YSEPS } from "./types";
 
 // --- Angle Conversions (16-bit: 0x10000 = 360 deg) ---
 
 export function sin16(a: number): number {
-  return Math.sin(a * YSPI / 32768.0);
+  return Math.sin((a * YSPI) / 32768.0);
 }
 
 export function cos16(a: number): number {
-  return Math.cos(a * YSPI / 32768.0);
+  return Math.cos((a * YSPI) / 32768.0);
 }
 
 function atan16(s: number): number {
-  return Math.atan(s) * 32768.0 / YSPI;
+  return (Math.atan(s) * 32768.0) / YSPI;
 }
 
 // --- Vector Operations ---
 
 export function setPoint(dst: Vec3, x: number, y: number, z: number): void {
-  dst.x = x; dst.y = y; dst.z = z;
+  dst.x = x;
+  dst.y = y;
+  dst.z = z;
 }
 
 export function addPoint(dst: Vec3, a: Vec3, b: Vec3): void {
-  dst.x = a.x + b.x; dst.y = a.y + b.y; dst.z = a.z + b.z;
+  dst.x = a.x + b.x;
+  dst.y = a.y + b.y;
+  dst.z = a.z + b.z;
 }
 
 export function subPoint(dst: Vec3, a: Vec3, b: Vec3): void {
-  dst.x = a.x - b.x; dst.y = a.y - b.y; dst.z = a.z - b.z;
+  dst.x = a.x - b.x;
+  dst.y = a.y - b.y;
+  dst.z = a.z - b.z;
 }
 
 export function mulPoint(dst: Vec3, src: Vec3, m: number): void {
-  dst.x = src.x * m; dst.y = src.y * m; dst.z = src.z * m;
+  dst.x = src.x * m;
+  dst.y = src.y * m;
+  dst.z = src.z * m;
 }
 
 export function innerPoint(a: Vec3, b: Vec3): number {
@@ -61,7 +76,9 @@ export function lengthPoint3(p: Vec3): number {
 export function normalize(dst: Vec3, src: Vec3): void {
   const l = lengthPoint3(src);
   if (l >= YSEPS) {
-    dst.x = src.x / l; dst.y = src.y / l; dst.z = src.z / l;
+    dst.x = src.x / l;
+    dst.y = src.y / l;
+    dst.z = src.z / l;
   }
 }
 
@@ -90,14 +107,17 @@ export function mulV3(v: Vec3, s: number): Vec3 {
 function findKeenEdge(np: number, p: Vec3[]): { idx: number; found: boolean } {
   let vCos = 1.0;
   let idTop = 0;
-  const v: Vec3[] = [vec3(0,0,0), vec3(0,0,0)];
+  const v: Vec3[] = [vec3(0, 0, 0), vec3(0, 0, 0)];
   for (let i = 0; i < np - 2; i++) {
     subPoint(v[0], p[i + 1], p[i]);
     subPoint(v[1], p[i + 2], p[i + 1]);
     normalize(v[0], v[0]);
     normalize(v[1], v[1]);
     const inr = Math.abs(innerPoint(v[0], v[1]));
-    if (inr < vCos) { vCos = inr; idTop = i; }
+    if (inr < vCos) {
+      vCos = inr;
+      idTop = i;
+    }
   }
   return { idx: idTop, found: vCos !== 1.0 };
 }
@@ -115,9 +135,12 @@ export function averageNormalVector(nom: Vec3, np: number, p: Vec3[]): boolean {
 
 export function makeTrigonomy(att: Attitude): TrigCache {
   return {
-    sinh: sin16(att.h), cosh: cos16(att.h),
-    sinp: sin16(att.p), cosp: cos16(att.p),
-    sinb: sin16(att.b), cosb: cos16(att.b),
+    sinh: sin16(att.h),
+    cosh: cos16(att.h),
+    sinp: sin16(att.p),
+    cosp: cos16(att.p),
+    sinb: sin16(att.b),
+    cosb: cos16(att.b),
   };
 }
 
@@ -132,9 +155,9 @@ export function rotFastLtoG(dst: Vec3, src: Vec3, t: TrigCache): void {
   let tmpp_x = t.cosb * src.x - t.sinb * src.y;
   let tmpp_y = t.sinb * src.x + t.cosb * src.y;
   let tmpp_z = t.cosp * src.z - t.sinp * tmpp_y;
-  dst.y     = t.sinp * src.z + t.cosp * tmpp_y;
-  dst.x     = t.cosh * tmpp_x - t.sinh * tmpp_z;
-  dst.z     = t.sinh * tmpp_x + t.cosh * tmpp_z;
+  dst.y = t.sinp * src.z + t.cosp * tmpp_y;
+  dst.x = t.cosh * tmpp_x - t.sinh * tmpp_z;
+  dst.z = t.sinh * tmpp_x + t.cosh * tmpp_z;
 }
 
 export function rotGtoL(dst: Vec3, src: Vec3, ang: Attitude): void {
@@ -143,11 +166,11 @@ export function rotGtoL(dst: Vec3, src: Vec3, ang: Attitude): void {
 }
 
 export function rotFastGtoL(dst: Vec3, src: Vec3, t: TrigCache): void {
-  let tmpp_x =  t.cosh * src.x + t.sinh * src.z;
+  let tmpp_x = t.cosh * src.x + t.sinh * src.z;
   let tmpp_z = -t.sinh * src.x + t.cosh * src.z;
-  dst.z =  t.cosp * tmpp_z + t.sinp * src.y;
+  dst.z = t.cosp * tmpp_z + t.sinp * src.y;
   let tmpp_y = -t.sinp * tmpp_z + t.cosp * src.y;
-  dst.x =  t.cosb * tmpp_x + t.sinb * tmpp_y;
+  dst.x = t.cosb * tmpp_x + t.sinb * tmpp_y;
   dst.y = -t.sinb * tmpp_x + t.cosb * tmpp_y;
 }
 
@@ -172,14 +195,16 @@ export function pntAngToAxis(dst: Axis, src: PosAtt): void {
 // --- Projection ---
 
 export function project(dst: ScreenPoint, src: Vec3, prj: Projection): void {
-  dst.x = prj.cx + (src.x * prj.magx / src.z);
-  dst.y = prj.cy - (src.y * prj.magy / src.z);
+  dst.x = prj.cx + (src.x * prj.magx) / src.z;
+  dst.y = prj.cy - (src.y * prj.magy) / src.z;
 }
 
 export function getStdProjection(width: number, height: number): Projection {
   return {
-    lx: width, ly: height,
-    cx: width / 2, cy: height / 2,
+    lx: width,
+    ly: height,
+    cx: width / 2,
+    cy: height / 2,
     // Match BiGetStdProjection in the original Blue Impulse engine.
     magx: width / 1.41421356,
     magy: width / 1.41421356,
@@ -194,15 +219,15 @@ function biAngle2(x: number, y: number): number {
   const ax = Math.abs(x);
   const ay = Math.abs(y);
   if (ax < YSEPS && ay < YSEPS) return 0;
+  let result: number;
   if (ax >= ay) {
     const a = atan16(y / ax);
-    if (x > 0) return a;
-    return (y > 0) ? (0x8000 - a) : (-0x8000 - a);
+    result = x > 0 ? a : y > 0 ? 0x8000 - a : -0x8000 - a;
   } else {
     const a = atan16(x / ay);
-    if (y > 0) return (0x4000 - a);
-    return (-0x4000 + a);
+    result = y > 0 ? 0x4000 - a : -0x4000 + a;
   }
+  return Object.is(result, -0) ? 0 : result;
 }
 
 export function vectorToHeadPitch(an: Attitude, eye: Vec3): void {
@@ -263,19 +288,13 @@ export function nearClipPolyg(p: Vec3[], nearz: number): Vec3[] {
       out.push({ ...p[i] });
       if (p[i + 1].z <= nearz) {
         const t = (nearz - p[i].z) / (p[i + 1].z - p[i].z);
-        out.push(vec3(
-          p[i].x + (p[i+1].x - p[i].x) * t,
-          p[i].y + (p[i+1].y - p[i].y) * t,
-          nearz,
-        ));
+        out.push(
+          vec3(p[i].x + (p[i + 1].x - p[i].x) * t, p[i].y + (p[i + 1].y - p[i].y) * t, nearz)
+        );
       }
     } else if (p[i + 1].z > nearz) {
       const t = (nearz - p[i].z) / (p[i + 1].z - p[i].z);
-      out.push(vec3(
-        p[i].x + (p[i+1].x - p[i].x) * t,
-        p[i].y + (p[i+1].y - p[i].y) * t,
-        nearz,
-      ));
+      out.push(vec3(p[i].x + (p[i + 1].x - p[i].x) * t, p[i].y + (p[i + 1].y - p[i].y) * t, nearz));
     }
   }
 
@@ -283,20 +302,24 @@ export function nearClipPolyg(p: Vec3[], nearz: number): Vec3[] {
   if (p[np - 1].z > nearz) {
     out.push({ ...p[np - 1] });
     if (p[0].z <= nearz) {
-      const t = (nearz - p[np-1].z) / (p[0].z - p[np-1].z);
-      out.push(vec3(
-        p[np-1].x + (p[0].x - p[np-1].x) * t,
-        p[np-1].y + (p[0].y - p[np-1].y) * t,
-        nearz,
-      ));
+      const t = (nearz - p[np - 1].z) / (p[0].z - p[np - 1].z);
+      out.push(
+        vec3(
+          p[np - 1].x + (p[0].x - p[np - 1].x) * t,
+          p[np - 1].y + (p[0].y - p[np - 1].y) * t,
+          nearz
+        )
+      );
     }
   } else if (p[0].z > nearz) {
-    const t = (nearz - p[np-1].z) / (p[0].z - p[np-1].z);
-    out.push(vec3(
-      p[np-1].x + (p[0].x - p[np-1].x) * t,
-      p[np-1].y + (p[0].y - p[np-1].y) * t,
-      nearz,
-    ));
+    const t = (nearz - p[np - 1].z) / (p[0].z - p[np - 1].z);
+    out.push(
+      vec3(
+        p[np - 1].x + (p[0].x - p[np - 1].x) * t,
+        p[np - 1].y + (p[0].y - p[np - 1].y) * t,
+        nearz
+      )
+    );
   }
 
   return out;

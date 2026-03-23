@@ -47,6 +47,7 @@ fn vsLit(input: VertexInput) -> VertexOutput {
 ## Fragment Shader — Lit Pipeline
 
 Implements the original's lighting model from `BiShadColor`:
+
 - Ambient: 0.3
 - Diffuse: `max(0, dot(N, L)) * 0.6`
 - Specular: `pow(max(0, dot(R, V)), 60) * 0.3`

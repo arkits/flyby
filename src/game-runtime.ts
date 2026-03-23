@@ -1,13 +1,40 @@
 import type {
-  AppMode, Attitude, CameraMode, CameraPose, DynamicActorSnapshot, Field, GpuField, GpuSrf, MapEnvironment, PosAtt,
-  SrfModel, VehicleCommand, VehicleSpec, VehicleState, Vec3, WorldSnapshot,
-} from './types';
+  AppMode,
+  Attitude,
+  CameraMode,
+  CameraPose,
+  DynamicActorSnapshot,
+  Field,
+  GpuField,
+  GpuSrf,
+  MapEnvironment,
+  PosAtt,
+  SrfModel,
+  VehicleCommand,
+  VehicleSpec,
+  VehicleState,
+  Vec3,
+  WorldSnapshot,
+} from "./types";
 import {
-  convLtoG, cos16, makeTrigonomy, rotFastLtoG, rotGtoL, sin16, vec3, vectorToHeadPitch,
-} from './math';
-import { clampCameraPitch, downloadFrame, DebugInputController, GameplayInputController, wrapAngle16 } from './input';
-import { Renderer } from './renderer';
-import { WorldQueryService } from './world-query';
+  convLtoG,
+  cos16,
+  makeTrigonomy,
+  rotFastLtoG,
+  rotGtoL,
+  sin16,
+  vec3,
+  vectorToHeadPitch,
+} from "./math";
+import {
+  clampCameraPitch,
+  downloadFrame,
+  DebugInputController,
+  GameplayInputController,
+  wrapAngle16,
+} from "./input";
+import { Renderer } from "./renderer";
+import { WorldQueryService } from "./world-query";
 
 const FIXED_STEP = 1 / 120;
 const ANGLE16_PER_DEGREE = 0x10000 / 360;
@@ -19,7 +46,7 @@ interface ModelAsset {
 }
 
 export interface GameRuntimeOptions {
-  appMode: Exclude<AppMode, 'scriptedFlyby'>;
+  appMode: Exclude<AppMode, "scriptedFlyby">;
   renderer: Renderer;
   canvas: HTMLCanvasElement;
   hudRoot: HTMLDivElement;
@@ -36,7 +63,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function lerp(a: number, b: number, t: number): number {
-  return a + ((b - a) * t);
+  return a + (b - a) * t;
 }
 
 function expDamp(current: number, target: number, lambda: number, dt: number): number {
@@ -57,7 +84,7 @@ function mulVec3(value: Vec3, scalar: number): Vec3 {
 }
 
 function dotVec3(a: Vec3, b: Vec3): number {
-  return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+  return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 function lengthVec3(value: Vec3): number {
@@ -97,7 +124,7 @@ function lerpAngle16(current: number, target: number, t: number): number {
   if (delta > 0x8000) {
     delta -= 0x10000;
   }
-  return wrapAngle16(current + (delta * t));
+  return wrapAngle16(current + delta * t);
 }
 
 function transformDirection(attitude: Attitude, local: Vec3): Vec3 {
@@ -142,10 +169,10 @@ function emptySmokeGeometry(): { lit: Float32Array; lines: Float32Array } {
 }
 
 const AIRCRAFT_SPEC: VehicleSpec = {
-  key: 'freeflight-f16',
-  label: 'F-16 Free Flight',
-  kind: 'aircraft',
-  modelFile: 'f16.srf',
+  key: "freeflight-f16",
+  label: "F-16 Free Flight",
+  kind: "aircraft",
+  modelFile: "f16.srf",
   mass: 12000,
   inertia: { x: 4800, y: 3600, z: 5200 },
   collisionHalfExtents: { x: 7.5, y: 2.8, z: 8.5 },
@@ -175,10 +202,10 @@ const AIRCRAFT_SPEC: VehicleSpec = {
 };
 
 const CAR_SPEC: VehicleSpec = {
-  key: 'formula-car',
-  label: 'F1 Drive',
-  kind: 'car',
-  modelFile: 'f1.srf',
+  key: "formula-car",
+  label: "F1 Drive",
+  kind: "car",
+  modelFile: "f1.srf",
   mass: 820,
   inertia: { x: 1600, y: 900, z: 1500 },
   collisionHalfExtents: { x: 0.95, y: 0.7, z: 2.25 },
@@ -211,8 +238,8 @@ const CAR_SPEC: VehicleSpec = {
   },
 };
 
-function pickVehicleSpec(mode: Exclude<AppMode, 'scriptedFlyby'>): VehicleSpec {
-  return mode === 'drive' ? CAR_SPEC : AIRCRAFT_SPEC;
+function pickVehicleSpec(mode: Exclude<AppMode, "scriptedFlyby">): VehicleSpec {
+  return mode === "drive" ? CAR_SPEC : AIRCRAFT_SPEC;
 }
 
 function fallbackAsset(spec: VehicleSpec, modelsByFile: Map<string, ModelAsset>): ModelAsset {
@@ -220,7 +247,7 @@ function fallbackAsset(spec: VehicleSpec, modelsByFile: Map<string, ModelAsset>)
   if (direct) return direct;
   const first = modelsByFile.values().next().value as ModelAsset | undefined;
   if (!first) {
-    throw new Error('No vehicle models were loaded for gameplay modes');
+    throw new Error("No vehicle models were loaded for gameplay modes");
   }
   return first;
 }
@@ -244,7 +271,7 @@ export class GameRuntime {
 
   private previousPose: PosAtt;
 
-  private cameraMode: CameraMode = 'chase';
+  private cameraMode: CameraMode = "chase";
 
   private cameraPose: CameraPose;
 
@@ -275,9 +302,10 @@ export class GameRuntime {
       gpuModel: this.asset.gpu,
       transform: posAttFromState(this.vehicle),
     };
-    this.options.hudRoot.className = 'game-console';
-    this.options.helpOverlay.textContent = 'P pause  C camera  drag trim  wheel zoom  R reset  T capture';
-    this.options.helpOverlay.classList.add('is-visible');
+    this.options.hudRoot.className = "game-console";
+    this.options.helpOverlay.textContent =
+      "P pause  C camera  drag trim  wheel zoom  R reset  T capture";
+    this.options.helpOverlay.classList.add("is-visible");
   }
 
   start(): void {
@@ -314,11 +342,8 @@ export class GameRuntime {
       downloadFrame(this.options.canvas);
     }
     if (this.debugInput.consumeCycleCamera()) {
-      this.cameraMode = this.cameraMode === 'chase'
-        ? 'orbit'
-        : this.cameraMode === 'orbit'
-          ? 'cockpit'
-          : 'chase';
+      this.cameraMode =
+        this.cameraMode === "chase" ? "orbit" : this.cameraMode === "orbit" ? "cockpit" : "chase";
     }
     if (this.debugInput.consumeResetVehicle()) {
       this.debugInput.resetCameraTrim();
@@ -329,7 +354,7 @@ export class GameRuntime {
 
   private createVehicleState(): VehicleState {
     const spec = this.spec;
-    if (spec.kind === 'aircraft') {
+    if (spec.kind === "aircraft") {
       return {
         spec,
         position: { x: 92.86, y: Math.max(this.options.initialAltitude + 55, 170), z: -420 },
@@ -367,14 +392,14 @@ export class GameRuntime {
       gear: 1,
       stall: 0,
       aoaDeg: 0,
-      wheelCompression: new Array(spec.car?.wheels.length ?? 0).fill(0),
-      wheelGrounded: new Array(spec.car?.wheels.length ?? 0).fill(true),
+      wheelCompression: Array.from({ length: spec.car?.wheels.length ?? 0 }, () => 0),
+      wheelGrounded: Array.from({ length: spec.car?.wheels.length ?? 0 }, () => true),
     };
   }
 
   private step(dt: number): void {
     const command = this.gameplayInput.sample(this.vehicle.spec.kind);
-    if (this.vehicle.spec.kind === 'aircraft') {
+    if (this.vehicle.spec.kind === "aircraft") {
       this.stepAircraft(command, dt);
     } else {
       this.stepCar(command, dt);
@@ -393,7 +418,7 @@ export class GameRuntime {
     const stallByAngle = clamp((Math.abs(aoaDeg) - spec.stallAngleDeg) / spec.stallAngleDeg, 0, 1);
     const stallBySpeed = clamp((spec.stallSpeed - forwardSpeed) / spec.stallSpeed, 0, 1);
     const stall = Math.max(stallByAngle, stallBySpeed);
-    const controlAuthority = 1 - (stall * 0.7);
+    const controlAuthority = 1 - stall * 0.7;
 
     this.vehicle.throttle = clamp(lerp(this.vehicle.throttle, command.throttle, dt * 2.5), 0, 1);
     this.vehicle.boost = command.boost;
@@ -403,19 +428,30 @@ export class GameRuntime {
     const targetPitchRate = command.pitch * spec.pitchRate * controlAuthority;
     const targetRollRate = command.roll * spec.rollRate * controlAuthority;
     this.vehicle.angularVelocity.x = expDamp(this.vehicle.angularVelocity.x, targetYawRate, 5, dt);
-    this.vehicle.angularVelocity.y = expDamp(this.vehicle.angularVelocity.y, targetPitchRate, 5, dt);
+    this.vehicle.angularVelocity.y = expDamp(
+      this.vehicle.angularVelocity.y,
+      targetPitchRate,
+      5,
+      dt
+    );
     this.vehicle.angularVelocity.z = expDamp(this.vehicle.angularVelocity.z, targetRollRate, 6, dt);
 
-    this.vehicle.attitude.h = wrapAngle16(this.vehicle.attitude.h + degreesToAngle16(this.vehicle.angularVelocity.x * dt));
-    this.vehicle.attitude.p = clampCameraPitch(this.vehicle.attitude.p + degreesToAngle16(this.vehicle.angularVelocity.y * dt));
-    this.vehicle.attitude.b = wrapAngle16(this.vehicle.attitude.b + degreesToAngle16(this.vehicle.angularVelocity.z * dt));
+    this.vehicle.attitude.h = wrapAngle16(
+      this.vehicle.attitude.h + degreesToAngle16(this.vehicle.angularVelocity.x * dt)
+    );
+    this.vehicle.attitude.p = clampCameraPitch(
+      this.vehicle.attitude.p + degreesToAngle16(this.vehicle.angularVelocity.y * dt)
+    );
+    this.vehicle.attitude.b = wrapAngle16(
+      this.vehicle.attitude.b + degreesToAngle16(this.vehicle.angularVelocity.z * dt)
+    );
 
-    const thrust = (spec.thrust * this.vehicle.throttle) + (spec.boostThrust * this.vehicle.boost);
-    const liftScale = clamp(1 - (stall * 0.9), 0.08, 1);
+    const thrust = spec.thrust * this.vehicle.throttle + spec.boostThrust * this.vehicle.boost;
+    const liftScale = clamp(1 - stall * 0.9, 0.08, 1);
     const localForce = {
       x: -localVel.x * spec.sideDrag * Math.max(16, speed),
-      y: (forwardSpeed * forwardSpeed * spec.liftPower * liftScale) - (localVel.y * spec.drag * 180),
-      z: thrust - (Math.sign(localVel.z || 1) * localVel.z * localVel.z * spec.drag * 180),
+      y: forwardSpeed * forwardSpeed * spec.liftPower * liftScale - localVel.y * spec.drag * 180,
+      z: thrust - Math.sign(localVel.z || 1) * localVel.z * localVel.z * spec.drag * 180,
     };
     if (stall > 0.2) {
       localForce.y -= stall * 36000;
@@ -426,7 +462,7 @@ export class GameRuntime {
     const acceleration = mulVec3(worldForce, 1 / this.vehicle.spec.mass);
     this.vehicle.linearVelocity = addVec3(this.vehicle.linearVelocity, mulVec3(acceleration, dt));
 
-    const maxSpeed = spec.maxSpeed + (this.vehicle.boost * 35);
+    const maxSpeed = spec.maxSpeed + this.vehicle.boost * 35;
     const newSpeed = lengthVec3(this.vehicle.linearVelocity);
     if (newSpeed > maxSpeed) {
       this.vehicle.linearVelocity = mulVec3(normalizeVec3(this.vehicle.linearVelocity), maxSpeed);
@@ -485,14 +521,11 @@ export class GameRuntime {
 
     const dragForward = -forwardSpeed * 1.9;
     const dragLateral = -lateralSpeed * spec.lateralGrip * (command.handbrake > 0.05 ? 0.24 : 1);
-    const forwardAccel = (driveForce / this.vehicle.spec.mass) + dragForward;
+    const forwardAccel = driveForce / this.vehicle.spec.mass + dragForward;
     const lateralAccel = dragLateral;
     let newVelocity = addVec3(
       this.vehicle.linearVelocity,
-      addVec3(
-        mulVec3(forwardFlat, forwardAccel * dt),
-        mulVec3(rightFlat, lateralAccel * dt),
-      ),
+      addVec3(mulVec3(forwardFlat, forwardAccel * dt), mulVec3(rightFlat, lateralAccel * dt))
     );
 
     const flatSpeed = lengthVec3({ x: newVelocity.x, y: 0, z: newVelocity.z });
@@ -506,9 +539,12 @@ export class GameRuntime {
     }
 
     const steerAuthority = clamp(flatSpeed / 16, 0.15, 1);
-    const yawRateTarget = command.steer * spec.steerAngleDeg * steerAuthority * (1 + (command.handbrake * 0.35)) * 3.2;
+    const yawRateTarget =
+      command.steer * spec.steerAngleDeg * steerAuthority * (1 + command.handbrake * 0.35) * 3.2;
     this.vehicle.angularVelocity.x = expDamp(this.vehicle.angularVelocity.x, yawRateTarget, 7, dt);
-    this.vehicle.attitude.h = wrapAngle16(this.vehicle.attitude.h + degreesToAngle16(this.vehicle.angularVelocity.x * dt));
+    this.vehicle.attitude.h = wrapAngle16(
+      this.vehicle.attitude.h + degreesToAngle16(this.vehicle.angularVelocity.x * dt)
+    );
 
     const wheelHeights: number[] = [];
     let compressionTotal = 0;
@@ -516,7 +552,11 @@ export class GameRuntime {
     const trig = makeTrigonomy(this.vehicle.attitude);
     spec.wheels.forEach((wheel, index) => {
       const mount = vec3(0, 0, 0);
-      convLtoG(mount, wheel.localPosition, { p: this.vehicle.position, a: this.vehicle.attitude, t: trig });
+      convLtoG(mount, wheel.localPosition, {
+        p: this.vehicle.position,
+        a: this.vehicle.attitude,
+        t: trig,
+      });
       const sample = this.worldQuery.sampleGround(mount);
       const wheelBottom = mount.y - (wheel.radius + wheel.suspensionRestLength);
       const compression = sample.hit
@@ -533,14 +573,15 @@ export class GameRuntime {
       }
     });
 
-    const avgWheelHeight = wheelHeights.length > 0
-      ? wheelHeights.reduce((sum, value) => sum + value, 0) / wheelHeights.length
-      : this.vehicle.position.y - spec.rideHeight;
+    const avgWheelHeight =
+      wheelHeights.length > 0
+        ? wheelHeights.reduce((sum, value) => sum + value, 0) / wheelHeights.length
+        : this.vehicle.position.y - spec.rideHeight;
     const avgCompression = spec.wheels.length > 0 ? compressionTotal / spec.wheels.length : 0;
 
     let nextPosition = addVec3(this.vehicle.position, mulVec3(newVelocity, dt));
     nextPosition = this.resolveObstacleCollision(nextPosition, 1.5);
-    nextPosition.y = avgWheelHeight + spec.rideHeight + (avgCompression * 0.12);
+    nextPosition.y = avgWheelHeight + spec.rideHeight + avgCompression * 0.12;
     nextPosition = this.worldQuery.constrainPointAboveGround(nextPosition, spec.rideHeight);
     this.vehicle.position = nextPosition;
     this.vehicle.linearVelocity = {
@@ -550,13 +591,23 @@ export class GameRuntime {
     };
     this.vehicle.grounded = groundedCount > 0;
 
-    const frontAverage = ((this.vehicle.wheelCompression[0] ?? 0) + (this.vehicle.wheelCompression[1] ?? 0)) * 0.5;
-    const rearAverage = ((this.vehicle.wheelCompression[2] ?? 0) + (this.vehicle.wheelCompression[3] ?? 0)) * 0.5;
-    const leftAverage = ((this.vehicle.wheelCompression[0] ?? 0) + (this.vehicle.wheelCompression[2] ?? 0)) * 0.5;
-    const rightAverage = ((this.vehicle.wheelCompression[1] ?? 0) + (this.vehicle.wheelCompression[3] ?? 0)) * 0.5;
+    const frontAverage =
+      ((this.vehicle.wheelCompression[0] ?? 0) + (this.vehicle.wheelCompression[1] ?? 0)) * 0.5;
+    const rearAverage =
+      ((this.vehicle.wheelCompression[2] ?? 0) + (this.vehicle.wheelCompression[3] ?? 0)) * 0.5;
+    const leftAverage =
+      ((this.vehicle.wheelCompression[0] ?? 0) + (this.vehicle.wheelCompression[2] ?? 0)) * 0.5;
+    const rightAverage =
+      ((this.vehicle.wheelCompression[1] ?? 0) + (this.vehicle.wheelCompression[3] ?? 0)) * 0.5;
     const targetPitch = degreesToAngle16((rearAverage - frontAverage) * 9);
-    const targetBank = degreesToAngle16(((leftAverage - rightAverage) * 12) - (command.steer * flatSpeed * 0.8));
-    this.vehicle.attitude.p = lerpAngle16(this.vehicle.attitude.p, targetPitch, clamp(dt * 5, 0, 1));
+    const targetBank = degreesToAngle16(
+      (leftAverage - rightAverage) * 12 - command.steer * flatSpeed * 0.8
+    );
+    this.vehicle.attitude.p = lerpAngle16(
+      this.vehicle.attitude.p,
+      targetPitch,
+      clamp(dt * 5, 0, 1)
+    );
     this.vehicle.attitude.b = lerpAngle16(this.vehicle.attitude.b, targetBank, clamp(dt * 6, 0, 1));
     this.vehicle.engineRpm = 1200 + Math.max(0, Math.abs(forwardSpeed)) * 110;
     this.vehicle.aoaDeg = 0;
@@ -565,7 +616,7 @@ export class GameRuntime {
 
   private resolveObstacleCollision(nextPosition: Vec3, clearance: number): Vec3 {
     const hit = this.worldQuery.raycastSegment(this.vehicle.position, nextPosition, 28);
-    if (hit === null || hit.kind !== 'obstacle') {
+    if (hit === null || hit.kind !== "obstacle") {
       return nextPosition;
     }
 
@@ -586,58 +637,58 @@ export class GameRuntime {
       this.vehicle.position,
       addVec3(
         mulVec3(vehicleBasis.up, this.spec.camera.chaseHeight * 0.3),
-        mulVec3(vehicleBasis.forward, this.spec.camera.chaseLead),
-      ),
+        mulVec3(vehicleBasis.forward, this.spec.camera.chaseLead)
+      )
     );
 
     let desiredPosition = { ...this.cameraPose.posAtt.p };
-    if (this.cameraMode === 'cockpit') {
+    if (this.cameraMode === "cockpit") {
       desiredPosition = vec3(0, 0, 0);
-      convLtoG(
-        desiredPosition,
-        this.spec.camera.cockpitOffset,
-        { p: vehiclePose.p, a: vehiclePose.a, t: makeTrigonomy(vehiclePose.a) },
-      );
-    } else if (this.cameraMode === 'orbit') {
+      convLtoG(desiredPosition, this.spec.camera.cockpitOffset, {
+        p: vehiclePose.p,
+        a: vehiclePose.a,
+        t: makeTrigonomy(vehiclePose.a),
+      });
+    } else if (this.cameraMode === "orbit") {
       const orbitHeading = angle16ToDegrees(debugTrim.heading) * (Math.PI / 180);
       const orbitPitch = clamp(angle16ToDegrees(debugTrim.pitch), -80, 80) * (Math.PI / 180);
       const orbitDistance = this.spec.camera.orbitDistance / debugTrim.zoom;
       desiredPosition = {
-        x: target.x + (Math.sin(orbitHeading) * Math.cos(orbitPitch) * orbitDistance),
-        y: target.y + (Math.sin(orbitPitch) * orbitDistance) + 2.5,
-        z: target.z - (Math.cos(orbitHeading) * Math.cos(orbitPitch) * orbitDistance),
+        x: target.x + Math.sin(orbitHeading) * Math.cos(orbitPitch) * orbitDistance,
+        y: target.y + Math.sin(orbitPitch) * orbitDistance + 2.5,
+        z: target.z - Math.cos(orbitHeading) * Math.cos(orbitPitch) * orbitDistance,
       };
     } else {
       const chaseDistance = this.spec.camera.chaseDistance / debugTrim.zoom;
       const chaseOffset = addVec3(
         mulVec3(vehicleBasis.forward, -chaseDistance),
-        addVec3(
-          mulVec3(vehicleBasis.up, this.spec.camera.chaseHeight),
-          velocityLead,
-        ),
+        addVec3(mulVec3(vehicleBasis.up, this.spec.camera.chaseHeight), velocityLead)
       );
       desiredPosition = addVec3(this.vehicle.position, chaseOffset);
     }
 
-    if (this.cameraMode !== 'cockpit') {
+    if (this.cameraMode !== "cockpit") {
       const resolvedDistance = this.worldQuery.resolveCameraDistance(target, desiredPosition);
       const desiredDirection = normalizeVec3(subVec3(desiredPosition, target));
       desiredPosition = addVec3(target, mulVec3(desiredDirection, resolvedDistance));
-      desiredPosition = this.worldQuery.constrainPointAboveGround(desiredPosition, this.vehicle.spec.kind === 'car' ? 1.4 : 3.2);
+      desiredPosition = this.worldQuery.constrainPointAboveGround(
+        desiredPosition,
+        this.vehicle.spec.kind === "car" ? 1.4 : 3.2
+      );
     }
 
     this.cameraPose.posAtt.p = lerpVec3(
       this.cameraPose.posAtt.p,
       desiredPosition,
-      clamp(1 - Math.exp(-this.spec.camera.damping * dt), 0, 1),
+      clamp(1 - Math.exp(-this.spec.camera.damping * dt), 0, 1)
     );
 
     const lookVector = subVec3(target, this.cameraPose.posAtt.p);
     vectorToHeadPitch(this.cameraPose.posAtt.a, lookVector);
-    if (this.cameraMode === 'chase') {
+    if (this.cameraMode === "chase") {
       this.cameraPose.posAtt.a.h = wrapAngle16(this.cameraPose.posAtt.a.h + debugTrim.heading);
       this.cameraPose.posAtt.a.p = clampCameraPitch(this.cameraPose.posAtt.a.p + debugTrim.pitch);
-    } else if (this.cameraMode === 'cockpit') {
+    } else if (this.cameraMode === "cockpit") {
       this.cameraPose.posAtt.a = { ...this.vehicle.attitude };
       this.cameraPose.posAtt.a.h = wrapAngle16(this.cameraPose.posAtt.a.h + debugTrim.heading);
       this.cameraPose.posAtt.a.p = clampCameraPitch(this.cameraPose.posAtt.a.p + debugTrim.pitch);
@@ -679,12 +730,14 @@ export class GameRuntime {
 
   private buildHudMarkup(): string {
     const speed = lengthVec3(this.vehicle.linearVelocity);
-    const primary = this.vehicle.spec.kind === 'aircraft'
-      ? `alt ${this.vehicle.position.y.toFixed(1)} m`
-      : `steer ${(this.vehicle.steer * 100).toFixed(0)}%`;
-    const secondary = this.vehicle.spec.kind === 'aircraft'
-      ? `aoa ${this.vehicle.aoaDeg.toFixed(1)} deg | stall ${(this.vehicle.stall * 100).toFixed(0)}%`
-      : `susp ${this.vehicle.wheelCompression.map((value) => value.toFixed(2)).join(' / ')}`;
+    const primary =
+      this.vehicle.spec.kind === "aircraft"
+        ? `alt ${this.vehicle.position.y.toFixed(1)} m`
+        : `steer ${(this.vehicle.steer * 100).toFixed(0)}%`;
+    const secondary =
+      this.vehicle.spec.kind === "aircraft"
+        ? `aoa ${this.vehicle.aoaDeg.toFixed(1)} deg | stall ${(this.vehicle.stall * 100).toFixed(0)}%`
+        : `susp ${this.vehicle.wheelCompression.map((value) => value.toFixed(2)).join(" / ")}`;
     return `
       <div class="game-console__header">
         <span class="game-console__title">${this.vehicle.spec.label}</span>
@@ -693,7 +746,7 @@ export class GameRuntime {
       <div class="game-console__grid">
         <div><span>speed</span><strong>${speed.toFixed(1)} m/s</strong></div>
         <div><span>rpm</span><strong>${this.vehicle.engineRpm.toFixed(0)}</strong></div>
-        <div><span>state</span><strong>${this.paused ? 'paused' : 'live'}</strong></div>
+        <div><span>state</span><strong>${this.paused ? "paused" : "live"}</strong></div>
         <div><span>camera</span><strong>${this.cameraPose.distance.toFixed(1)} m</strong></div>
       </div>
       <div class="game-console__line">${primary}</div>
