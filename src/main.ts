@@ -515,7 +515,80 @@ async function loadConfig(url: string, mode: FlybyMode): Promise<Config> {
   return config;
 }
 
+function showModeMenu(): void {
+  const app = document.getElementById("app")!;
+
+  const menu = document.createElement("div");
+  menu.className = "mode-menu";
+
+  menu.innerHTML = `
+    <header class="mode-menu__header">
+      <div class="mode-menu__eyebrow">
+        <span class="mode-menu__eyebrow-dot"></span>
+        <span>System Online</span>
+        <span class="mode-menu__eyebrow-dot"></span>
+      </div>
+      <div class="mode-menu__title">FLY<span>BY</span>2</div>
+      <div class="mode-menu__subtitle">Military Aircraft Simulation</div>
+      <div class="mode-menu__divider"></div>
+    </header>
+
+    <div class="mode-menu__cards">
+      <a class="mode-menu__card" href="?app=screensaver">
+        <div class="mode-menu__card-num">01 · Auto</div>
+        <div class="mode-menu__card-name">Screensaver</div>
+        <div class="mode-menu__card-rule"></div>
+        <div class="mode-menu__card-desc">
+          Cinematic aircraft flyby with automated maneuvers and smoke effects.
+          Hands-free.
+        </div>
+        <div class="mode-menu__card-cta">
+          Initiate <i class="mode-menu__card-cta-arrow">→</i>
+        </div>
+      </a>
+
+      <a class="mode-menu__card" href="?app=freeflight">
+        <div class="mode-menu__card-num">02 · Interactive</div>
+        <div class="mode-menu__card-name">Free Flight</div>
+        <div class="mode-menu__card-rule"></div>
+        <div class="mode-menu__card-desc">
+          Take manual control of an aircraft. Explore the terrain at your own pace.
+        </div>
+        <div class="mode-menu__card-cta">
+          Initiate <i class="mode-menu__card-cta-arrow">→</i>
+        </div>
+      </a>
+
+      <a class="mode-menu__card" href="?app=drive">
+        <div class="mode-menu__card-num">03 · Ground</div>
+        <div class="mode-menu__card-name">Drive</div>
+        <div class="mode-menu__card-rule"></div>
+        <div class="mode-menu__card-desc">
+          Command an F1 race car. Navigate the airport circuit at full speed.
+        </div>
+        <div class="mode-menu__card-cta">
+          Initiate <i class="mode-menu__card-cta-arrow">→</i>
+        </div>
+      </a>
+    </div>
+
+    <footer class="mode-menu__footer">
+      <div class="mode-menu__footer-item">WebGPU Renderer</div>
+      <div class="mode-menu__footer-item">FLYBY2 Reimplementation</div>
+      <div class="mode-menu__footer-item">Select Operation</div>
+    </footer>
+  `;
+
+  app.appendChild(menu);
+}
+
 async function main(): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("app") === null) {
+    showModeMenu();
+    return;
+  }
+
   const runtime = getRuntimeOptions();
   const app = document.getElementById("app")!;
   const shell = document.createElement("div");
