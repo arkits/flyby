@@ -642,8 +642,9 @@ body {
 
 .debug-console__controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
+  align-items: start;
 }
 
 .debug-console__control {
@@ -1341,7 +1342,6 @@ body {
     padding: 10px;
   }
 
-  .debug-console__controls,
   .debug-console__telemetry-grid {
     grid-template-columns: 1fr;
   }
